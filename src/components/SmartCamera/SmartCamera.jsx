@@ -6,6 +6,10 @@ const SmartCamera = ({ onBack }) => {
   const [isLoadingModel, setIsLoadingModel] = useState(true);
   const [isFestejoDetected, setIsFestejoDetected] = useState(false);
 
+  // === NUEVOS ESTADOS PARA LOS LENTES (0.5x, 1x) ===
+  const [videoDevices, setVideoDevices] = useState([]);
+  const [activeDeviceId, setActiveDeviceId] = useState(null);
+
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -14,7 +18,7 @@ const SmartCamera = ({ onBack }) => {
   const detectorRef = useRef(null);
   const detectionIntervalRef = useRef(null);
   
-  // NUEVO: Referencia para el bucle que reinicia el video cada 30 segundos
+  // Referencia para el bucle que reinicia el video cada 60 segundos
   const recorderIntervalRef = useRef(null); 
   
   const consecutiveFramesRef = useRef(0);
@@ -52,14 +56,30 @@ const SmartCamera = ({ onBack }) => {
     return () => stopCamera();
   }, []);
 
-  const startCamera = async () => {
+  // === startCamera ACTUALIZADO PARA ACEPTAR EL LENTE ESPECÍFICO ===
+  const startCamera = async (specificDeviceId = null) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-        audio: false 
-      });
+      const videoConstraints = specificDeviceId
+        ? { deviceId: { exact: specificDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
+        : { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } };
+
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
+
+      // Leemos cuántos lentes físicos tiene el celular
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter(d => d.kind === 'videoinput');
+      setVideoDevices(videoInputs);
+
+      // Guardamos en memoria el lente que estamos usando actualmente
+      const activeTrack = stream.getVideoTracks()[0];
+      const currentDevice = videoInputs.find(d => d.label === activeTrack.label);
+      if (currentDevice) {
+        setActiveDeviceId(currentDevice.deviceId);
+      } else if (specificDeviceId) {
+        setActiveDeviceId(specificDeviceId);
+      }
 
       startRecording(stream);
       setIsCameraActive(true);
@@ -89,14 +109,13 @@ const SmartCamera = ({ onBack }) => {
 
   // === MAGIA NUEVA: GRABADOR INTELIGENTE Y SIN CORTES CORRUPTOS ===
   const startRecording = (stream) => {
-    // Limpiamos bucles anteriores si existen
     if (recorderIntervalRef.current) clearInterval(recorderIntervalRef.current);
 
     const startFresh = () => {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
-      chunksRef.current = []; // Vaciamos para empezar limpios y con cabecera nueva
+      chunksRef.current = []; 
       
       const mediaRecorder = new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
@@ -107,12 +126,11 @@ const SmartCamera = ({ onBack }) => {
         }
       };
       
-      mediaRecorder.start(); // Graba continuo, sin pedacitos de 5 seg
+      mediaRecorder.start(); 
     };
 
     startFresh();
 
-    // Reiniciamos todo cada 60 segundos de forma invisible para que el archivo no pese gigas
     recorderIntervalRef.current = setInterval(() => {
       if (!isProcessingVideoRef.current) {
         startFresh();
@@ -186,22 +204,20 @@ const SmartCamera = ({ onBack }) => {
     }
   };
 
- const triggerVideoProcessing = async () => {
+  const triggerVideoProcessing = async () => {
     isProcessingVideoRef.current = true; 
     consecutiveFramesRef.current = 0; 
     setIsFestejoDetected(true);
     
-    // 1. Frenamos YA para que se guarde el final del video y no se corrompa
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
 
-    // 2. Esperamos 500ms a que el grabador termine de escupir los datos a chunksRef
     setTimeout(async () => {
       if (chunksRef.current.length === 0) {
         isProcessingVideoRef.current = false;
         setIsFestejoDetected(false);
-        startRecording(streamRef.current); // Reiniciamos falló
+        startRecording(streamRef.current); 
         return;
       }
 
@@ -210,24 +226,17 @@ const SmartCamera = ({ onBack }) => {
       formData.append('file', videoBlob);
       formData.append('upload_preset', 'padel_videos');
       formData.append('resource_type', 'video');
-      formData.append('tags', 'festejos_padel'); // <-- PERFECTO
+      formData.append('tags', 'festejos_padel'); 
 
       try {
         console.log("Subiendo video de forma segura...");
-        const response = await axios.post('https://api.cloudinary.com/v1_1/dzo2wt8ir/video/upload', formData);
+        await axios.post('https://api.cloudinary.com/v1_1/dzo2wt8ir/video/upload', formData);
         console.log("¡Video subido y etiquetado con éxito!");
-        
-        // BORRAMOS LO DEL LOCALSTORAGE PORQUE AHORA USAMOS LA NUBE DIRECTO
-
       } catch (error) {
         console.error("Error Axios:", error);
       } finally {
         setIsFestejoDetected(false);
-        
-        // 3. Volvemos a encender la cámara limpia desde cero para el próximo festejo
         startRecording(streamRef.current); 
-        
-        // Soltamos el candado después de 3 segundos
         setTimeout(() => { isProcessingVideoRef.current = false; }, 3000); 
       }
     }, 500);
@@ -235,7 +244,30 @@ const SmartCamera = ({ onBack }) => {
 
   const toggleMasterSwitch = () => {
     if (isCameraActive) stopCamera();
-    else startCamera();
+    else startCamera(activeDeviceId); // Arranca con el último lente elegido
+  };
+
+  // === NUEVA FUNCIÓN: CAMBIAR DE LENTE ===
+  const switchLens = async () => {
+    if (videoDevices.length <= 1) {
+      alert("No se detectaron lentes extra. Asegurate de darle a 'Iniciar' primero para dar permisos.");
+      return;
+    }
+    
+    // Buscamos el lente actual y pasamos al siguiente en la lista
+    const currentIndex = videoDevices.findIndex(d => d.deviceId === activeDeviceId);
+    const nextIndex = (currentIndex + 1) % videoDevices.length;
+    const nextDeviceId = videoDevices[nextIndex].deviceId;
+
+    setActiveDeviceId(nextDeviceId);
+
+    // Si estaba grabando, reiniciamos rápido con el nuevo lente
+    if (isCameraActive) {
+      stopCamera();
+      setTimeout(() => startCamera(nextDeviceId), 500); 
+    } else {
+      startCamera(nextDeviceId);
+    }
   };
 
   return (
@@ -274,7 +306,12 @@ const SmartCamera = ({ onBack }) => {
             </div>
           )}
 
-          <div style={styles.controls}>
+          {/* === BOTONES ACTUALIZADOS === */}
+          <div style={styles.controlsWrapper}>
+            <button onClick={switchLens} style={styles.lensButton}>
+              <span style={styles.rotatedText}>🔄 Lente</span>
+            </button>
+
             <button onClick={toggleMasterSwitch} disabled={isLoadingModel} 
               style={{...styles.masterButton, backgroundColor: isLoadingModel ? '#6c757d' : (isCameraActive ? '#dc3545' : '#28a745')}}>
               <span style={styles.rotatedText}>{isLoadingModel ? 'Cargando' : (isCameraActive ? 'Detener' : 'Iniciar')}</span>
@@ -293,6 +330,7 @@ const SmartCamera = ({ onBack }) => {
   );
 };
 
+// === ESTILOS ACTUALIZADOS ===
 const styles = {
   container: { position: 'relative', width: '100vw', height: '100vh', backgroundColor: '#000', overflow: 'hidden' },
   loadingOverlay: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: '#001132', zIndex: 1000, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '30px', color: '#fff' },
@@ -310,8 +348,12 @@ const styles = {
   sideArea: { flex: 1, backgroundColor: 'rgba(255, 0, 0, 0.2)', width: '100%' }, 
   centerROI: { flex: 3, width: '100%', borderTop: '2px dashed rgba(255, 255, 255, 0.5)', borderBottom: '2px dashed rgba(255, 255, 255, 0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center' },
   roiText: { transform: 'rotate(-90deg)', color: 'rgba(255, 255, 255, 0.6)', fontWeight: 'bold', fontSize: '24px', letterSpacing: '4px', textShadow: '0px 0px 4px rgba(0,0,0,0.9)' },
-  controls: { position: 'absolute', right: '30px', top: '50%', transform: 'translateY(-50%)', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto' },
+  
+  // Wrapper y botones
+  controlsWrapper: { position: 'absolute', right: '30px', top: '50%', transform: 'translateY(-50%)', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', pointerEvents: 'auto' },
+  lensButton: { padding: '0', width: '70px', height: '70px', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', color: '#fff', border: '2px solid rgba(255,255,255,0.5)', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center' },
   masterButton: { padding: '0', width: '100px', height: '100px', color: '#fff', border: '4px solid #fff', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center' },
+  
   rotatedText: { transform: 'rotate(-90deg)', fontSize: '16px', fontWeight: 'bold', letterSpacing: '1px' },
   successOverlay: { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-90deg)', backgroundColor: 'rgba(40, 167, 69, 0.95)', padding: '30px 50px', borderRadius: '20px', zIndex: 20, boxShadow: '0 10px 40px rgba(0,0,0,0.8)' },
   successText: { color: '#fff', margin: 0, fontSize: '32px', fontWeight: 'bold', textAlign: 'center', letterSpacing: '2px' }
