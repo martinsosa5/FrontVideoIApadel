@@ -6,7 +6,7 @@ const SmartCamera = ({ onBack }) => {
   const [isLoadingModel, setIsLoadingModel] = useState(true);
   const [isFestejoDetected, setIsFestejoDetected] = useState(false);
 
-  // === NUEVOS ESTADOS PARA LOS LENTES (0.5x, 1x) ===
+  // === ESTADOS PARA LOS LENTES (0.5x, 1x) ===
   const [videoDevices, setVideoDevices] = useState([]);
   const [activeDeviceId, setActiveDeviceId] = useState(null);
 
@@ -32,8 +32,11 @@ const SmartCamera = ({ onBack }) => {
         if (!tf || !poseDetection) throw new Error("IA no cargada");
 
         await tf.ready();
+        
+        // === NUEVA CONFIGURACIÓN: MODO MULTI-JUGADOR ===
         const detectorConfig = {
-          modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
+          modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
+          enableTracking: true, // Ayuda a no perder a los jugadores si se mueven rápido
           enableSmoothing: true
         };
         
@@ -46,7 +49,7 @@ const SmartCamera = ({ onBack }) => {
         warmUpCanvas.width = 160;
         warmUpCanvas.height = 160;
         await detectorRef.current.estimatePoses(warmUpCanvas);
-        console.log("IA lista");
+        console.log("IA MultiPose lista");
         setIsLoadingModel(false);
       } catch (error) {
         console.error("Error IA:", error);
@@ -56,7 +59,6 @@ const SmartCamera = ({ onBack }) => {
     return () => stopCamera();
   }, []);
 
-  // === startCamera ACTUALIZADO PARA ACEPTAR EL LENTE ESPECÍFICO ===
   const startCamera = async (specificDeviceId = null) => {
     try {
       const videoConstraints = specificDeviceId
@@ -67,12 +69,10 @@ const SmartCamera = ({ onBack }) => {
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
 
-      // Leemos cuántos lentes físicos tiene el celular
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoInputs = devices.filter(d => d.kind === 'videoinput');
       setVideoDevices(videoInputs);
 
-      // Guardamos en memoria el lente que estamos usando actualmente
       const activeTrack = stream.getVideoTracks()[0];
       const currentDevice = videoInputs.find(d => d.label === activeTrack.label);
       if (currentDevice) {
@@ -107,7 +107,6 @@ const SmartCamera = ({ onBack }) => {
     setIsCameraActive(false);
   };
 
-  // === MAGIA NUEVA: GRABADOR INTELIGENTE Y SIN CORTES CORRUPTOS ===
   const startRecording = (stream) => {
     if (recorderIntervalRef.current) clearInterval(recorderIntervalRef.current);
 
@@ -138,6 +137,7 @@ const SmartCamera = ({ onBack }) => {
     }, 60000); 
   };
 
+  // === BUCLE DE DETECCIÓN ACTUALIZADO ===
   const startDetectionLoop = () => {
     detectionIntervalRef.current = setInterval(async () => {
       if (isProcessingVideoRef.current || !videoRef.current || !detectorRef.current || !canvasRef.current) return;
@@ -154,8 +154,23 @@ const SmartCamera = ({ onBack }) => {
 
       try {
         const poses = await detectorRef.current.estimatePoses(video);
+        
+        let anyoneCelebrating = false;
+        
+        // Revisamos a TODAS las personas detectadas en la cancha
         if (poses && poses.length > 0) {
-          processPoseKeypoints(poses[0].keypoints, ctx); 
+          poses.forEach(pose => {
+            const isCelebrating = processPoseKeypoints(pose.keypoints, ctx);
+            if (isCelebrating) {
+              anyoneCelebrating = true;
+            }
+          });
+        }
+        
+        // Si AL MENOS UNA persona levantó los brazos
+        if (anyoneCelebrating) {
+          consecutiveFramesRef.current += 1;
+          if (consecutiveFramesRef.current >= 4) triggerVideoProcessing();
         } else {
           consecutiveFramesRef.current = 0;
         }
@@ -165,16 +180,23 @@ const SmartCamera = ({ onBack }) => {
     }, 250);
   };
 
+  // === LÓGICA DE POSTURA MEJORADA (MÁS SENSIBLE A LA DISTANCIA) ===
   const processPoseKeypoints = (keypoints, ctx) => {
     const MIN_SCORE = 0.2; 
+    
+    // Pintamos los puntos de cada jugador en la pantalla
     if (ctx) {
       keypoints.forEach(kp => {
         if (kp.score > MIN_SCORE) {
           ctx.beginPath();
           ctx.arc(kp.x, kp.y, 8, 0, 2 * Math.PI); 
-          if (kp.name === 'nose') ctx.fillStyle = '#0d6efd'; 
-          else if (['left_wrist', 'right_wrist'].includes(kp.name)) ctx.fillStyle = '#ffc107'; 
-          else ctx.fillStyle = '#dc3545'; 
+          if (['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'].includes(kp.name)) {
+            ctx.fillStyle = '#0d6efd'; // Cabeza azul
+          } else if (['left_wrist', 'right_wrist'].includes(kp.name)) {
+            ctx.fillStyle = '#ffc107'; // Muñecas amarillas
+          } else {
+            ctx.fillStyle = '#dc3545'; // Resto rojo
+          }
           ctx.fill();
         }
       });
@@ -185,23 +207,30 @@ const SmartCamera = ({ onBack }) => {
       return acc;
     }, {});
 
-    const nose = kpDict['nose'];
     const lWrist = kpDict['left_wrist'];
     const rWrist = kpDict['right_wrist'];
 
-    if (nose && nose.score > MIN_SCORE) {
-      const leftArmUp = lWrist && lWrist.score > MIN_SCORE && lWrist.x < nose.x;
-      const rightArmUp = rWrist && rWrist.score > MIN_SCORE && rWrist.x < nose.x;
+    // BUSCAMOS LA CABEZA: Si no ve la nariz, busca ojos u orejas
+    let headX = null;
+    const headParts = ['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'];
+    for (let part of headParts) {
+      if (kpDict[part] && kpDict[part].score > MIN_SCORE) {
+        headX = kpDict[part].x;
+        break; // Apenas encuentre una parte válida de la cabeza, la usa
+      }
+    }
+
+    // Si detectamos la cabeza de esta persona, evaluamos sus brazos
+    if (headX !== null) {
+      // (En apaisado, recordá que usamos el eje X para la altura)
+      const leftArmUp = lWrist && lWrist.score > MIN_SCORE && lWrist.x < headX;
+      const rightArmUp = rWrist && rWrist.score > MIN_SCORE && rWrist.x < headX;
 
       if (leftArmUp && rightArmUp) {
-        consecutiveFramesRef.current += 1;
-        if (consecutiveFramesRef.current >= 4) triggerVideoProcessing();
-      } else {
-        consecutiveFramesRef.current = 0;
+        return true; // Esta persona específica está festejando
       }
-    } else {
-      consecutiveFramesRef.current = 0;
     }
+    return false; // Esta persona no está festejando
   };
 
   const triggerVideoProcessing = async () => {
@@ -244,24 +273,21 @@ const SmartCamera = ({ onBack }) => {
 
   const toggleMasterSwitch = () => {
     if (isCameraActive) stopCamera();
-    else startCamera(activeDeviceId); // Arranca con el último lente elegido
+    else startCamera(activeDeviceId); 
   };
 
-  // === NUEVA FUNCIÓN: CAMBIAR DE LENTE ===
   const switchLens = async () => {
     if (videoDevices.length <= 1) {
       alert("No se detectaron lentes extra. Asegurate de darle a 'Iniciar' primero para dar permisos.");
       return;
     }
     
-    // Buscamos el lente actual y pasamos al siguiente en la lista
     const currentIndex = videoDevices.findIndex(d => d.deviceId === activeDeviceId);
     const nextIndex = (currentIndex + 1) % videoDevices.length;
     const nextDeviceId = videoDevices[nextIndex].deviceId;
 
     setActiveDeviceId(nextDeviceId);
 
-    // Si estaba grabando, reiniciamos rápido con el nuevo lente
     if (isCameraActive) {
       stopCamera();
       setTimeout(() => startCamera(nextDeviceId), 500); 
@@ -306,7 +332,6 @@ const SmartCamera = ({ onBack }) => {
             </div>
           )}
 
-          {/* === BOTONES ACTUALIZADOS === */}
           <div style={styles.controlsWrapper}>
             <button onClick={switchLens} style={styles.lensButton}>
               <span style={styles.rotatedText}>🔄 Lente</span>
@@ -330,7 +355,6 @@ const SmartCamera = ({ onBack }) => {
   );
 };
 
-// === ESTILOS ACTUALIZADOS ===
 const styles = {
   container: { position: 'relative', width: '100vw', height: '100vh', backgroundColor: '#000', overflow: 'hidden' },
   loadingOverlay: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: '#001132', zIndex: 1000, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', gap: '30px', color: '#fff' },
@@ -348,12 +372,9 @@ const styles = {
   sideArea: { flex: 1, backgroundColor: 'rgba(255, 0, 0, 0.2)', width: '100%' }, 
   centerROI: { flex: 3, width: '100%', borderTop: '2px dashed rgba(255, 255, 255, 0.5)', borderBottom: '2px dashed rgba(255, 255, 255, 0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center' },
   roiText: { transform: 'rotate(-90deg)', color: 'rgba(255, 255, 255, 0.6)', fontWeight: 'bold', fontSize: '24px', letterSpacing: '4px', textShadow: '0px 0px 4px rgba(0,0,0,0.9)' },
-  
-  // Wrapper y botones
   controlsWrapper: { position: 'absolute', right: '30px', top: '50%', transform: 'translateY(-50%)', zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', pointerEvents: 'auto' },
   lensButton: { padding: '0', width: '70px', height: '70px', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', color: '#fff', border: '2px solid rgba(255,255,255,0.5)', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center' },
   masterButton: { padding: '0', width: '100px', height: '100px', color: '#fff', border: '4px solid #fff', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center' },
-  
   rotatedText: { transform: 'rotate(-90deg)', fontSize: '16px', fontWeight: 'bold', letterSpacing: '1px' },
   successOverlay: { position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%) rotate(-90deg)', backgroundColor: 'rgba(40, 167, 69, 0.95)', padding: '30px 50px', borderRadius: '20px', zIndex: 20, boxShadow: '0 10px 40px rgba(0,0,0,0.8)' },
   successText: { color: '#fff', margin: 0, fontSize: '32px', fontWeight: 'bold', textAlign: 'center', letterSpacing: '2px' }
