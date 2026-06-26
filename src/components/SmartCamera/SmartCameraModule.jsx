@@ -34,7 +34,6 @@ const CameraGallery = ({ onBack }) => {
   const [myVideos, setMyVideos] = useState([]); 
   const [downloadingId, setDownloadingId] = useState(null); 
 
-  // Al cargar la galería, pedimos la lista pública a Cloudinary
   useEffect(() => {
     const fetchCloudinaryVideos = async () => {
       try {
@@ -46,14 +45,25 @@ const CameraGallery = ({ onBack }) => {
 
         const data = await response.json();
         
-        const videoList = data.resources.map((res) => ({
-          id: res.public_id,
-          // 🔥 CAMBIO CLAVE: Clavamos ".mp4" al final de la URL. 
-          // Cloudinary se encarga de transformarlo mágicamente en sus servidores.
-          url: `https://res.cloudinary.com/dzo2wt8ir/video/upload/v${res.version}/${res.public_id}.mp4`,
-          date: 'Clip en la nube',
-          duration: 'NexaIA'
-        }));
+        const videoList = data.resources.map((res) => {
+          // El ID real de tu logo que me pasaste
+          const logoId = 'logo-np_ghtjtq'; 
+          
+          // Configuración de la marca de agua:
+          // w_120: ancho de 120 píxeles para que quede estético
+          // g_south_east: abajo a la derecha
+          // x_20, y_20: separación de los bordes del video
+          // o_60: opacidad al 60% para que sea sutil y no tape el juego
+          const watermarkConfig = `l_${logoId},w_120,g_south_east,x_20,y_20,o_60`;
+
+          return {
+            id: res.public_id,
+            // Inyectamos la marca de agua en la URL antes del formato .mp4
+            url: `https://res.cloudinary.com/dzo2wt8ir/video/upload/${watermarkConfig}/v${res.version}/${res.public_id}.mp4`,
+            date: 'Clip NexaPadel', // <-- TEXTO ACTUALIZADO
+            duration: 'NexaIA'
+          };
+        });
 
         setMyVideos(videoList);
       } catch (error) {
