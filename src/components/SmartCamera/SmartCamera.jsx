@@ -217,6 +217,7 @@ const SmartCamera = ({ onBack }) => {
     }
   };
 
+ // Función que se ejecuta cuando se cumple el objetivo
   const triggerVideoProcessing = async () => {
     isProcessingVideoRef.current = true; 
     consecutiveFramesRef.current = 0; 
@@ -232,20 +233,28 @@ const SmartCamera = ({ onBack }) => {
     }
 
     const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' }); 
+    
+    // === ESTO ES LO NUEVO: MANDAMOS DIRECTO A CLOUDINARY DESDE EL FRONT ===
     const formData = new FormData();
-    formData.append('video', videoBlob, 'festejo-padel.webm');
+    formData.append('file', videoBlob); // El video
+    formData.append('upload_preset', 'padel_videos'); // El permiso público que creaste en el Paso 1
+    formData.append('resource_type', 'video');
 
     try {
-      console.log("Enviando video al servidor Node.js...");
-      const response = await axios.post('http://localhost:3000/api/videos/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-      console.log("¡Video enviado con éxito a Cloudinary!", response.data);
+      console.log("Subiendo video directo a Cloudinary...");
+      
+      // Hacemos el POST directo a la API de Cloudinary usando TU cloud_name (dzo2wt8ir)
+      const response = await axios.post(
+        'https://api.cloudinary.com/v1_1/dzo2wt8ir/video/upload', 
+        formData
+      );
+      
+      console.log("¡Video subido con éxito! 🚀");
+      console.log("URL Pública del video para mirar:", response.data.secure_url);
+      
       chunksRef.current = [];
     } catch (error) {
-      console.error("Error al enviar el video vía Axios:", error);
+      console.error("Error al enviar el video a Cloudinary:", error);
     } finally {
       setTimeout(() => {
         setIsFestejoDetected(false);
