@@ -14,7 +14,7 @@ const SmartCamera = () => {
   const streamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]); // Buffer circular de video
-  const canvasRef = useRef(null); // Canvas oculto para recortar la ROI (Ya no recorta, pero se mantiene por estructura)
+  const canvasRef = useRef(null); // Canvas ahora se usará para dibujar los puntos en vivo
   const detectorRef = useRef(null); // Instancia del detector de TensorFlow
   const detectionIntervalRef = useRef(null); // Referencia del bucle de la IA
   
@@ -165,19 +165,30 @@ const SmartCamera = () => {
     // 250ms de intervalo = 4 ejecuciones por segundo (ideal para batería de celular)
     detectionIntervalRef.current = setInterval(async () => {
       // Si estamos procesando un video o falta algo, cortamos ejecución
-      if (isProcessingVideoRef.current || !videoRef.current || !detectorRef.current) return;
+      if (isProcessingVideoRef.current || !videoRef.current || !detectorRef.current || !canvasRef.current) return;
 
       const video = videoRef.current;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
 
       // Validamos que el video tenga dimensiones reales antes de procesar
       if (video.videoWidth === 0 || video.videoHeight === 0) return;
+
+      // === PREPARAMOS CANVAS PARA DIBUJAR PUNTOS EN VIVO ===
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+      // Limpiamos el canvas en cada frame para que los puntos no dejen "rastro"
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // ====================================================
 
       try {
         // PASAMOS EL VIDEO ENTERO A LA IA: Evita problemas de recortes y escalas
         const poses = await detectorRef.current.estimatePoses(video);
         
         if (poses && poses.length > 0) {
-          processPoseKeypoints(poses[0].keypoints);
+          processPoseKeypoints(poses[0].keypoints, ctx); // Pasamos el 'ctx' para poder dibujar
         } else {
           // Si no detecta ninguna persona, reiniciamos el contador por seguridad
           consecutiveFramesRef.current = 0;
@@ -189,7 +200,31 @@ const SmartCamera = () => {
   };
 
   // === LÓGICA MATEMÁTICA DEL TRIGGER ===
-  const processPoseKeypoints = (keypoints) => {
+  const processPoseKeypoints = (keypoints, ctx) => {
+    
+    // CALIBRACIÓN: Bajamos la confianza a 0.3 (30%) para ser más tolerantes de lejos
+    const MIN_SCORE = 0.3;
+
+    // === NUEVO: DIBUJAMOS LOS PUNTOS DE RASTREO VISUAL ===
+    if (ctx) {
+      keypoints.forEach(kp => {
+        if (kp.score > MIN_SCORE) {
+          ctx.beginPath();
+          ctx.arc(kp.x, kp.y, 8, 0, 2 * Math.PI); // Círculos de 8px
+          
+          // Muñecas y hombros en amarillo, el resto del cuerpo en rojo
+          if (['left_wrist', 'right_wrist', 'left_shoulder', 'right_shoulder'].includes(kp.name)) {
+            ctx.fillStyle = '#ffc107'; // Amarillo Bootstrap
+          } else {
+            ctx.fillStyle = '#dc3545'; // Rojo Bootstrap
+          }
+          
+          ctx.fill();
+        }
+      });
+    }
+    // =====================================================
+
     // Convertimos el array en un objeto fácil de leer por nombre
     const kpDict = keypoints.reduce((acc, kp) => {
       acc[kp.name] = kp;
@@ -200,9 +235,6 @@ const SmartCamera = () => {
     const rShoulder = kpDict['right_shoulder'];
     const lWrist = kpDict['left_wrist'];
     const rWrist = kpDict['right_wrist'];
-
-    // CALIBRACIÓN: Bajamos la confianza a 0.3 (30%) para ser más tolerantes de lejos
-    const MIN_SCORE = 0.3;
 
     // Verificamos que la IA esté viendo los 4 puntos con claridad
     if (
@@ -313,6 +345,10 @@ const SmartCamera = () => {
           style={styles.video}
         />
         
+        {/* === CANVAS DE DEPURACIÓN VISIBLE === */}
+        {/* Superpuesto al video para ver los puntos en tiempo real */}
+        <canvas ref={canvasRef} style={styles.debugCanvas} />
+        
         {/* Guía Visual (ROI - Región de Interés) superpuesta con zonas rojas (Franjas horizontales) */}
         {isCameraActive && (
           <div style={styles.overlayContainer}>
@@ -375,6 +411,16 @@ const styles = {
     width: '100%',
     height: '100%',
     objectFit: 'cover', // Asegura que el video llene toda la pantalla sin distorsionarse
+  },
+  debugCanvas: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover', // CLAVE: para que los puntos coincidan con la escala del video
+    pointerEvents: 'none', // Para que los clics pasen a través del canvas
+    zIndex: 2
   },
   overlayContainer: {
     position: 'absolute',
