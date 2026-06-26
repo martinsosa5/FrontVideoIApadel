@@ -1,92 +1,73 @@
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-// Ya NO importamos TensorFlow desde node_modules. 
-// Ahora lo leemos directamente desde la CDN en el index.html
 
 const SmartCamera = () => {
   // === ESTADOS DE LA UI ===
   const [isCameraActive, setIsCameraActive] = useState(false);
-  const [isLoadingModel, setIsLoadingModel] = useState(true); // Estado para la carga de la IA
-  const [isFestejoDetected, setIsFestejoDetected] = useState(false); // Feedback visual
+  const [isLoadingModel, setIsLoadingModel] = useState(true); 
+  const [isFestejoDetected, setIsFestejoDetected] = useState(false); 
 
-  // === REFERENCIAS MUTABLES (Sin re-renderizados) ===
+  // === REFERENCIAS MUTABLES ===
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
-  const chunksRef = useRef([]); // Buffer circular de video
-  const canvasRef = useRef(null); // Canvas para dibujar los puntos en vivo
-  const detectorRef = useRef(null); // Instancia del detector de TensorFlow
-  const detectionIntervalRef = useRef(null); // Referencia del bucle de la IA
+  const chunksRef = useRef([]); 
+  const canvasRef = useRef(null); 
+  const detectorRef = useRef(null); 
+  const detectionIntervalRef = useRef(null); 
   
   // === REFERENCIAS PARA LA LÓGICA DE DETECCIÓN ===
-  const consecutiveFramesRef = useRef(0); // Contador de frames con brazos arriba
-  const isProcessingVideoRef = useRef(false); // Candado para evitar envíos duplicados
+  const consecutiveFramesRef = useRef(0); 
+  const isProcessingVideoRef = useRef(false); 
 
   // === EFECTO: CARGAR MODELO DE IA AL INICIAR ===
   useEffect(() => {
     const initDetector = async () => {
       try {
-        // Usamos las variables globales inyectadas por la CDN
         const tf = window.tf;
         const poseDetection = window.poseDetection;
 
-        if (!tf || !poseDetection) {
-          throw new Error("Las librerías de IA no se cargaron desde la CDN");
-        }
+        if (!tf || !poseDetection) throw new Error("IA no cargada");
 
-        // Esperamos a que TensorFlow esté listo
         await tf.ready();
         
-        // Configuramos MoveNet Lightning (el más óptimo para móviles)
         const detectorConfig = {
           modelType: poseDetection.movenet.modelType.SINGLEPOSE_LIGHTNING,
           enableSmoothing: true
         };
         
-        // Creamos el detector y lo guardamos en la referencia
         detectorRef.current = await poseDetection.createDetector(
           poseDetection.SupportedModels.MoveNet, 
           detectorConfig
         );
 
-        // === PRECALENTAMIENTO (WARM-UP) ===
+        // PRECALENTAMIENTO
         const warmUpCanvas = document.createElement('canvas');
         warmUpCanvas.width = 160;
         warmUpCanvas.height = 160;
         await detectorRef.current.estimatePoses(warmUpCanvas);
-        console.log("IA precalentada y lista para la acción");
+        console.log("IA lista");
         
         setIsLoadingModel(false);
       } catch (error) {
-        console.error("Error al cargar el modelo de IA:", error);
-        alert("No se pudo cargar el modelo de detección de poses. Revisa tu conexión a internet.");
+        console.error("Error IA:", error);
       }
     };
 
     initDetector();
-
-    return () => {
-      stopCamera();
-    };
+    return () => stopCamera();
   }, []);
 
   // === FUNCIONES DE CONTROL ===
-
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
         audio: false 
       });
       
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      if (videoRef.current) videoRef.current.srcObject = stream;
 
       startRecording(stream);
       setIsCameraActive(true);
@@ -96,29 +77,15 @@ const SmartCamera = () => {
 
       startDetectionLoop();
     } catch (error) {
-      console.error("Error al acceder a la cámara:", error);
-      alert("No se pudo acceder a la cámara. Revisa los permisos.");
+      console.error("Error cámara:", error);
     }
   };
 
   const stopCamera = () => {
-    if (detectionIntervalRef.current) {
-      clearInterval(detectionIntervalRef.current);
-      detectionIntervalRef.current = null;
-    }
-
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
-    
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    if (detectionIntervalRef.current) clearInterval(detectionIntervalRef.current);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') mediaRecorderRef.current.stop();
+    if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+    if (videoRef.current) videoRef.current.srcObject = null;
 
     chunksRef.current = [];
     isProcessingVideoRef.current = false;
@@ -133,9 +100,7 @@ const SmartCamera = () => {
     mediaRecorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) {
         chunksRef.current.push(event.data);
-        if (chunksRef.current.length > 12) {
-          chunksRef.current.shift(); 
-        }
+        if (chunksRef.current.length > 12) chunksRef.current.shift(); 
       }
     };
 
@@ -167,12 +132,12 @@ const SmartCamera = () => {
           consecutiveFramesRef.current = 0;
         }
       } catch (err) {
-        console.error("Error en la estimación de pose:", err);
+        console.error("Error pose:", err);
       }
     }, 250);
   };
 
-  // === LÓGICA MATEMÁTICA FIJA Y ROBUSTA ===
+  // === LÓGICA MATEMÁTICA ROTADA (EJE X) ===
   const processPoseKeypoints = (keypoints, ctx) => {
     const MIN_SCORE = 0.2; 
 
@@ -181,13 +146,9 @@ const SmartCamera = () => {
         if (kp.score > MIN_SCORE) {
           ctx.beginPath();
           ctx.arc(kp.x, kp.y, 8, 0, 2 * Math.PI); 
-          if (kp.name === 'nose') {
-            ctx.fillStyle = '#0d6efd'; // Nariz Azul
-          } else if (['left_wrist', 'right_wrist'].includes(kp.name)) {
-            ctx.fillStyle = '#ffc107'; // Muñecas Amarillas
-          } else {
-            ctx.fillStyle = '#dc3545'; // Resto Rojo
-          }
+          if (kp.name === 'nose') ctx.fillStyle = '#0d6efd'; 
+          else if (['left_wrist', 'right_wrist'].includes(kp.name)) ctx.fillStyle = '#ffc107'; 
+          else ctx.fillStyle = '#dc3545'; 
           ctx.fill();
         }
       });
@@ -202,24 +163,21 @@ const SmartCamera = () => {
     const lWrist = kpDict['left_wrist'];
     const rWrist = kpDict['right_wrist'];
 
-    // Verificamos únicamente la existencia de la NARIZ
     if (nose && nose.score > MIN_SCORE) {
       let isArmUp = false;
 
-      // REGLA MATEMÁTICA FIJA: Las muñecas deben tener un valor Y MENOR que la nariz
-      // (Estar físicamente más cerca del techo de la pantalla)
-      if (lWrist && lWrist.score > MIN_SCORE && lWrist.y < nose.y) {
+      // LA MAGIA DE TU DEDUCCIÓN: Evaluamos el EJE X.
+      // El techo es X=0 (el lado contrario al botón).
+      // Si la muñeca tiene un valor X menor al de la nariz, significa que está físicamente levantada.
+      if (lWrist && lWrist.score > MIN_SCORE && lWrist.x < nose.x) {
         isArmUp = true;
       }
-      
-      if (rWrist && rWrist.score > MIN_SCORE && rWrist.y < nose.y) {
+      if (rWrist && rWrist.score > MIN_SCORE && rWrist.x < nose.x) {
         isArmUp = true;
       }
 
       if (isArmUp) {
         consecutiveFramesRef.current += 1;
-        console.log(`Brazos arriba detectados: Frame ${consecutiveFramesRef.current}/4`);
-
         if (consecutiveFramesRef.current >= 4) {
           triggerVideoProcessing();
         }
@@ -236,8 +194,6 @@ const SmartCamera = () => {
     consecutiveFramesRef.current = 0; 
     setIsFestejoDetected(true);
     
-    console.log("🎉 ¡FESTEJO DETECTADO CORRECTAMENTE! 🎉");
-    
     if (chunksRef.current.length === 0) {
       isProcessingVideoRef.current = false;
       setIsFestejoDetected(false);
@@ -253,42 +209,33 @@ const SmartCamera = () => {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
     } catch (error) {
-      console.error("Error al enviar el video vía Axios:", error);
+      console.error("Error Axios:", error);
     } finally {
-      setTimeout(() => {
-        setIsFestejoDetected(false);
-      }, 3000);
-
-      setTimeout(() => {
-        isProcessingVideoRef.current = false;
-      }, 5000); 
+      setTimeout(() => setIsFestejoDetected(false), 3000);
+      setTimeout(() => { isProcessingVideoRef.current = false; }, 5000); 
     }
   };
 
   const toggleMasterSwitch = () => {
-    if (isCameraActive) {
-      stopCamera();
-    } else {
-      startCamera();
-    }
+    if (isCameraActive) stopCamera();
+    else startCamera();
   };
 
-  // === RENDERIZADO (UI) ===
   return (
     <div style={styles.container}>
       <div style={styles.cameraWrapper}>
         <video ref={videoRef} autoPlay playsInline muted style={styles.video} />
         <canvas ref={canvasRef} style={styles.debugCanvas} />
         
-        {/* === GUÍAS DE ORIENTACIÓN PARA EL USUARIO === */}
         {isCameraActive && (
           <>
-            <div style={styles.topGuide}>▲ TECHO / PARTE SUPERIOR ▲</div>
-            <div style={styles.bottomGuide}>▼ PISO / PARTE INFERIOR ▼</div>
+            {/* GUÍAS ROTADAS VISUALMENTE PARA HORIZONTAL */}
+            <div style={styles.roofGuide}>▲ TECHO ▲</div>
             
             <div style={styles.overlayContainer}>
               <div style={styles.sideArea}></div>
               <div style={styles.centerROI}>
+                {/* TEXTO ROTADO */}
                 <p style={styles.roiText}>ZONA DE FESTEJO</p>
               </div>
               <div style={styles.sideArea}></div>
@@ -296,7 +243,6 @@ const SmartCamera = () => {
           </>
         )}
 
-        {/* CARTEL DE FESTEJO DETECTADO */}
         {isFestejoDetected && (
           <div style={styles.successOverlay}>
             <h2 style={styles.successText}>¡FESTEJO DETECTADO! 🎥</h2>
@@ -313,150 +259,62 @@ const SmartCamera = () => {
             backgroundColor: isLoadingModel ? '#6c757d' : (isCameraActive ? '#dc3545' : '#28a745')
           }}
         >
-          {isLoadingModel ? 'Cargando IA...' : (isCameraActive ? 'Detener' : 'Iniciar')}
+          {/* TEXTO DEL BOTÓN ROTADO */}
+          <span style={styles.rotatedText}>
+            {isLoadingModel ? 'Cargando' : (isCameraActive ? 'Detener' : 'Iniciar')}
+          </span>
         </button>
       </div>
     </div>
   );
 };
 
-// === ESTILOS ACTUALIZADOS ===
+// === ESTILOS ACTUALIZADOS (ROTACIÓN 90 GRADOS) ===
 const styles = {
-  container: {
-    position: 'relative',
-    width: '100vw',
-    height: '100vh',
-    backgroundColor: '#000',
-    overflow: 'hidden'
-  },
-  cameraWrapper: {
+  container: { position: 'relative', width: '100vw', height: '100vh', backgroundColor: '#000', overflow: 'hidden' },
+  cameraWrapper: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: '#111' },
+  video: { width: '100%', height: '100%', objectFit: 'cover' },
+  debugCanvas: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none', zIndex: 2 },
+  
+  roofGuide: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#111',
-  },
-  video: {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-  },
-  debugCanvas: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover', 
-    pointerEvents: 'none',
-    zIndex: 2
-  },
-  topGuide: {
-    position: 'absolute',
-    top: '10px',
-    left: '50%',
-    transform: 'translateX(-50%)',
+    left: '20px', // Físicamente el Techo
+    top: '50%',
+    transform: 'translateY(-50%) rotate(90deg)', // Rotado para leerse en horizontal
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    color: '#fff',
-    padding: '4px 15px',
-    borderRadius: '10px',
-    fontSize: '12px',
-    fontWeight: 'bold',
-    letterSpacing: '1px',
-    zIndex: 6
+    color: '#fff', padding: '8px 15px', borderRadius: '10px', fontSize: '14px', fontWeight: 'bold', letterSpacing: '2px', zIndex: 6
   },
-  bottomGuide: {
-    position: 'absolute',
-    bottom: '10px',
-    left: '50%',
-    transform: 'translateX(-50%)',
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    color: '#fff',
-    padding: '4px 15px',
-    borderRadius: '10px',
-    fontSize: '12px',
-    fontWeight: 'bold',
-    letterSpacing: '1px',
-    zIndex: 6
-  },
-  overlayContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    width: '100%',
-    height: '100%',
-    display: 'flex',
-    flexDirection: 'column', 
-    pointerEvents: 'none', 
-    zIndex: 5
-  },
-  sideArea: {
-    flex: 1, 
-    backgroundColor: 'rgba(255, 0, 0, 0.2)', 
-    width: '100%' 
-  },
-  centerROI: {
-    flex: 3, 
-    width: '100%',
-    borderTop: '2px dashed rgba(255, 255, 255, 0.5)', 
-    borderBottom: '2px dashed rgba(255, 255, 255, 0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center' 
-  },
+  
+  overlayContainer: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', pointerEvents: 'none', zIndex: 5 },
+  sideArea: { flex: 1, backgroundColor: 'rgba(255, 0, 0, 0.2)', width: '100%' }, // Costados físicos
+  centerROI: { flex: 3, width: '100%', borderTop: '2px dashed rgba(255, 255, 255, 0.5)', borderBottom: '2px dashed rgba(255, 255, 255, 0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center' },
+  
   roiText: {
-    color: 'rgba(255, 255, 255, 0.8)',
-    fontWeight: 'bold',
-    fontSize: '14px',
-    letterSpacing: '2px',
-    textShadow: '0px 0px 4px rgba(0,0,0,0.9)', 
+    transform: 'rotate(90deg)', // Rotado
+    color: 'rgba(255, 255, 255, 0.6)', fontWeight: 'bold', fontSize: '24px', letterSpacing: '4px', textShadow: '0px 0px 4px rgba(0,0,0,0.9)',
   },
+  
   controls: {
     position: 'absolute',
-    right: '30px',
+    right: '30px', // Físicamente los pies
     top: '50%',
     transform: 'translateY(-50%)',
-    zIndex: 10,
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    pointerEvents: 'auto' 
+    zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto'
   },
   masterButton: {
-    padding: '20px',
-    width: '100px',
-    height: '100px',
-    color: '#fff',
-    border: '3px solid #fff', 
-    borderRadius: '50%', 
-    fontSize: '14px',
-    fontWeight: 'bold',
-    cursor: 'pointer',
-    boxShadow: '0 4px 8px rgba(0,0,0,0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center'
+    padding: '0', width: '100px', height: '100px', color: '#fff', border: '4px solid #fff', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center'
   },
+  rotatedText: {
+    transform: 'rotate(90deg)', // El texto del botón ahora se lee en horizontal
+    fontSize: '16px', fontWeight: 'bold', letterSpacing: '1px'
+  },
+  
   successOverlay: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    backgroundColor: 'rgba(40, 167, 69, 0.9)', 
-    padding: '20px 40px',
-    borderRadius: '15px',
-    zIndex: 20,
-    boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+    position: 'absolute', top: '50%', left: '50%',
+    transform: 'translate(-50%, -50%) rotate(90deg)', // Cartel verde rotado
+    backgroundColor: 'rgba(40, 167, 69, 0.95)', padding: '30px 50px', borderRadius: '20px', zIndex: 20, boxShadow: '0 10px 40px rgba(0,0,0,0.8)'
   },
-  successText: {
-    color: '#fff',
-    margin: 0,
-    fontSize: '24px',
-    fontWeight: 'bold',
-    textAlign: 'center',
-    letterSpacing: '1px'
-  }
+  successText: { color: '#fff', margin: 0, fontSize: '32px', fontWeight: 'bold', textAlign: 'center', letterSpacing: '2px' }
 };
 
 export default SmartCamera;
