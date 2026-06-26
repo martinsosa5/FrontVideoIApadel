@@ -247,7 +247,7 @@ const SmartCamera = ({ onBack }) => {
             <div id="smartcamera-loader" style={styles.professionalLoader}></div>
           </div>
           <h2 style={styles.loadingTitle}>Cargando NexaIA</h2>
-          <p style={styles.loadingSubtext}>Preparando Modelo de Detección Profesional...</p>
+          <p style={styles.loadingSubtext}>Preparando Modelo de Detección ...</p>
         </div>
       )}
 
@@ -270,7 +270,7 @@ const SmartCamera = ({ onBack }) => {
 
           {isFestejoDetected && (
             <div style={styles.successOverlay}>
-              <h2 style={styles.successText}>¡FESTEJO DETECTADO! 🎥</h2>
+              <h2 style={styles.successText}>¡FESTEJO DETECTADO!</h2>
             </div>
           )}
 
