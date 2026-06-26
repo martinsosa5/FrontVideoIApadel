@@ -199,7 +199,7 @@ const SmartCamera = () => {
     }, 250);
   };
 
-  // === LÓGICA MATEMÁTICA DEL TRIGGER (OPTIMIZADA) ===
+// === LÓGICA MATEMÁTICA DEL TRIGGER (AUTO-ORIENTABLE) ===
   const processPoseKeypoints = (keypoints, ctx) => {
     
     // Bajamos la confianza a 20% para extremidades que se mueven rápido
@@ -232,24 +232,33 @@ const SmartCamera = () => {
       return acc;
     }, {});
 
-    // NUEVA ANCLA: Usamos la nariz en lugar de los hombros
     const nose = kpDict['nose'];
+    const lShoulder = kpDict['left_shoulder'];
+    const rShoulder = kpDict['right_shoulder'];
     const lWrist = kpDict['left_wrist'];
     const rWrist = kpDict['right_wrist'];
 
-    // Verificamos que la IA esté viendo la NARIZ (es nuestro punto de referencia fuerte)
-    if (nose && nose.score > MIN_SCORE) {
+    // Verificamos que la IA esté viendo la NARIZ y al menos UN HOMBRO para poder medir
+    if (nose && nose.score > MIN_SCORE && ((lShoulder && lShoulder.score > MIN_SCORE) || (rShoulder && rShoulder.score > MIN_SCORE))) {
+      
+      // === LA MAGIA: DETECCIÓN DINÁMICA DE ORIENTACIÓN ===
+      // Tomamos un hombro válido como referencia
+      const shoulder = (lShoulder && lShoulder.score > MIN_SCORE) ? lShoulder : rShoulder;
+      
+      // Comparamos la Nariz con el Hombro para saber dónde está "Arriba" físicamente.
+      // En la web, Y=0 es el borde superior. Si la cámara está normal, la nariz tiene un Y menor (más arriba) que el hombro.
+      const isCameraNormal = nose.y < shoulder.y;
       
       let isArmUp = false;
 
-      // Verificamos si la muñeca izquierda está por encima de la nariz (Y menor significa más arriba en la pantalla)
-      if (lWrist && lWrist.score > MIN_SCORE && lWrist.y < nose.y) {
-        isArmUp = true;
-      }
-      
-      // Verificamos si la muñeca derecha está por encima de la nariz
-      if (rWrist && rWrist.score > MIN_SCORE && rWrist.y < nose.y) {
-        isArmUp = true;
+      if (isCameraNormal) {
+        // Orientación Normal: Las muñecas deben estar más cerca del borde superior que la nariz
+        if (lWrist && lWrist.score > MIN_SCORE && lWrist.y < nose.y) isArmUp = true;
+        if (rWrist && rWrist.score > MIN_SCORE && rWrist.y < nose.y) isArmUp = true;
+      } else {
+        // Orientación Invertida: Las muñecas deben estar más lejos del borde superior que la nariz
+        if (lWrist && lWrist.score > MIN_SCORE && lWrist.y > nose.y) isArmUp = true;
+        if (rWrist && rWrist.score > MIN_SCORE && rWrist.y > nose.y) isArmUp = true;
       }
 
       // Si AL MENOS UN BRAZO está arriba de la cara
@@ -266,7 +275,7 @@ const SmartCamera = () => {
         consecutiveFramesRef.current = 0;
       }
     } else {
-      // Si no detecta la cara, reiniciamos
+      // Si no detecta la cara o los hombros, reiniciamos
       consecutiveFramesRef.current = 0;
     }
   };
