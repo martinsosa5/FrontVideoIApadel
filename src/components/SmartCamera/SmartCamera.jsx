@@ -7,18 +7,18 @@ const SmartCamera = () => {
   // === ESTADOS DE LA UI ===
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isLoadingModel, setIsLoadingModel] = useState(true); // Estado para la carga de la IA
-  const [isFestejoDetected, setIsFestejoDetected] = useState(false); // NUEVO: Feedback visual
+  const [isFestejoDetected, setIsFestejoDetected] = useState(false); // Feedback visual
 
   // === REFERENCIAS MUTABLES (Sin re-renderizados) ===
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]); // Buffer circular de video
-  const canvasRef = useRef(null); // Canvas ahora se usará para dibujar los puntos en vivo
+  const canvasRef = useRef(null); // Canvas para dibujar los puntos en vivo
   const detectorRef = useRef(null); // Instancia del detector de TensorFlow
   const detectionIntervalRef = useRef(null); // Referencia del bucle de la IA
   
-  // === NUEVAS REFERENCIAS PARA LA LÓGICA DE DETECCIÓN ===
+  // === REFERENCIAS PARA LA LÓGICA DE DETECCIÓN ===
   const consecutiveFramesRef = useRef(0); // Contador de frames con brazos arriba
   const isProcessingVideoRef = useRef(false); // Candado para evitar envíos duplicados
 
@@ -50,14 +50,11 @@ const SmartCamera = () => {
         );
 
         // === PRECALENTAMIENTO (WARM-UP) ===
-        // Creamos un canvas invisible chiquito
         const warmUpCanvas = document.createElement('canvas');
         warmUpCanvas.width = 160;
         warmUpCanvas.height = 160;
-        // Obligamos a la IA a procesarlo para que compile los shaders de WebGL sin congelar el celular después
         await detectorRef.current.estimatePoses(warmUpCanvas);
         console.log("IA precalentada y lista para la acción");
-        // =========================================
         
         setIsLoadingModel(false);
       } catch (error) {
@@ -68,7 +65,6 @@ const SmartCamera = () => {
 
     initDetector();
 
-    // Limpieza al desmontar el componente
     return () => {
       stopCamera();
     };
@@ -78,14 +74,13 @@ const SmartCamera = () => {
 
   const startCamera = async () => {
     try {
-      // Solicitamos acceso a la cámara trasera (ideal para trípode)
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'environment',
           width: { ideal: 1280 },
           height: { ideal: 720 }
         },
-        audio: false // Asumo que no necesitamos audio para detectar festejos
+        audio: false 
       });
       
       streamRef.current = stream;
@@ -96,11 +91,9 @@ const SmartCamera = () => {
       startRecording(stream);
       setIsCameraActive(true);
       
-      // Reiniciamos variables de lógica antes de iniciar
       isProcessingVideoRef.current = false;
       consecutiveFramesRef.current = 0;
 
-      // Iniciamos el bucle de la IA una vez que la cámara esté encendida
       startDetectionLoop();
     } catch (error) {
       console.error("Error al acceder a la cámara:", error);
@@ -109,18 +102,15 @@ const SmartCamera = () => {
   };
 
   const stopCamera = () => {
-    // Detenemos el bucle de la IA
     if (detectionIntervalRef.current) {
       clearInterval(detectionIntervalRef.current);
       detectionIntervalRef.current = null;
     }
 
-    // Detenemos el MediaRecorder
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
     }
     
-    // Apagamos las pistas de la cámara
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
@@ -130,7 +120,6 @@ const SmartCamera = () => {
       videoRef.current.srcObject = null;
     }
 
-    // Limpiamos el buffer y variables
     chunksRef.current = [];
     isProcessingVideoRef.current = false;
     consecutiveFramesRef.current = 0;
@@ -138,59 +127,43 @@ const SmartCamera = () => {
   };
 
   const startRecording = (stream) => {
-    // Configuramos el MediaRecorder
-    // Nota: iOS/Safari puede requerir configuraciones de mimeType específicas, 
-    // pero por defecto usará el formato compatible del sistema.
     const mediaRecorder = new MediaRecorder(stream);
     mediaRecorderRef.current = mediaRecorder;
 
     mediaRecorder.ondataavailable = (event) => {
       if (event.data && event.data.size > 0) {
-        // Añadimos el nuevo chunk (5 segundos)
         chunksRef.current.push(event.data);
-        
-        // Mantenemos solo los últimos 12 chunks (60 segundos)
         if (chunksRef.current.length > 12) {
           chunksRef.current.shift(); 
         }
       }
     };
 
-    // Iniciamos la grabación emitiendo chunks cada 5000ms (5 segundos)
     mediaRecorder.start(5000);
   };
 
-  // === BUCLE DE PROCESAMIENTO E IA (Optimizado a ~4 FPS) ===
+  // === BUCLE DE PROCESAMIENTO E IA ===
   const startDetectionLoop = () => {
-    // 250ms de intervalo = 4 ejecuciones por segundo (ideal para batería de celular)
     detectionIntervalRef.current = setInterval(async () => {
-      // Si estamos procesando un video o falta algo, cortamos ejecución
       if (isProcessingVideoRef.current || !videoRef.current || !detectorRef.current || !canvasRef.current) return;
 
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const ctx = canvas.getContext('2d');
 
-      // Validamos que el video tenga dimensiones reales antes de procesar
       if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
-      // === PREPARAMOS CANVAS PARA DIBUJAR PUNTOS EN VIVO ===
       if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
       }
-      // Limpiamos el canvas en cada frame para que los puntos no dejen "rastro"
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      // ====================================================
 
       try {
-        // PASAMOS EL VIDEO ENTERO A LA IA: Evita problemas de recortes y escalas
         const poses = await detectorRef.current.estimatePoses(video);
-        
         if (poses && poses.length > 0) {
-          processPoseKeypoints(poses[0].keypoints, ctx); // Pasamos el 'ctx' para poder dibujar
+          processPoseKeypoints(poses[0].keypoints, ctx); 
         } else {
-          // Si no detecta ninguna persona, reiniciamos el contador por seguridad
           consecutiveFramesRef.current = 0;
         }
       } catch (err) {
@@ -199,142 +172,95 @@ const SmartCamera = () => {
     }, 250);
   };
 
-// === LÓGICA MATEMÁTICA DEL TRIGGER (AUTO-ORIENTABLE) ===
+  // === LÓGICA MATEMÁTICA FIJA Y ROBUSTA ===
   const processPoseKeypoints = (keypoints, ctx) => {
-    
-    // Bajamos la confianza a 20% para extremidades que se mueven rápido
     const MIN_SCORE = 0.2; 
 
-    // === DIBUJAMOS LOS PUNTOS DE RASTREO VISUAL ===
     if (ctx) {
       keypoints.forEach(kp => {
         if (kp.score > MIN_SCORE) {
           ctx.beginPath();
           ctx.arc(kp.x, kp.y, 8, 0, 2 * Math.PI); 
-          
-          // Nariz en AZUL, Muñecas en AMARILLO, resto en ROJO
           if (kp.name === 'nose') {
-            ctx.fillStyle = '#0d6efd'; // Azul
+            ctx.fillStyle = '#0d6efd'; // Nariz Azul
           } else if (['left_wrist', 'right_wrist'].includes(kp.name)) {
-            ctx.fillStyle = '#ffc107'; // Amarillo
+            ctx.fillStyle = '#ffc107'; // Muñecas Amarillas
           } else {
-            ctx.fillStyle = '#dc3545'; // Rojo
+            ctx.fillStyle = '#dc3545'; // Resto Rojo
           }
-          
           ctx.fill();
         }
       });
     }
 
-    // Convertimos el array en un objeto fácil de leer por nombre
     const kpDict = keypoints.reduce((acc, kp) => {
       acc[kp.name] = kp;
       return acc;
     }, {});
 
     const nose = kpDict['nose'];
-    const lShoulder = kpDict['left_shoulder'];
-    const rShoulder = kpDict['right_shoulder'];
     const lWrist = kpDict['left_wrist'];
     const rWrist = kpDict['right_wrist'];
 
-    // Verificamos que la IA esté viendo la NARIZ y al menos UN HOMBRO para poder medir
-    if (nose && nose.score > MIN_SCORE && ((lShoulder && lShoulder.score > MIN_SCORE) || (rShoulder && rShoulder.score > MIN_SCORE))) {
-      
-      // === LA MAGIA: DETECCIÓN DINÁMICA DE ORIENTACIÓN ===
-      // Tomamos un hombro válido como referencia
-      const shoulder = (lShoulder && lShoulder.score > MIN_SCORE) ? lShoulder : rShoulder;
-      
-      // Comparamos la Nariz con el Hombro para saber dónde está "Arriba" físicamente.
-      // En la web, Y=0 es el borde superior. Si la cámara está normal, la nariz tiene un Y menor (más arriba) que el hombro.
-      const isCameraNormal = nose.y < shoulder.y;
-      
+    // Verificamos únicamente la existencia de la NARIZ
+    if (nose && nose.score > MIN_SCORE) {
       let isArmUp = false;
 
-      if (isCameraNormal) {
-        // Orientación Normal: Las muñecas deben estar más cerca del borde superior que la nariz
-        if (lWrist && lWrist.score > MIN_SCORE && lWrist.y < nose.y) isArmUp = true;
-        if (rWrist && rWrist.score > MIN_SCORE && rWrist.y < nose.y) isArmUp = true;
-      } else {
-        // Orientación Invertida: Las muñecas deben estar más lejos del borde superior que la nariz
-        if (lWrist && lWrist.score > MIN_SCORE && lWrist.y > nose.y) isArmUp = true;
-        if (rWrist && rWrist.score > MIN_SCORE && rWrist.y > nose.y) isArmUp = true;
+      // REGLA MATEMÁTICA FIJA: Las muñecas deben tener un valor Y MENOR que la nariz
+      // (Estar físicamente más cerca del techo de la pantalla)
+      if (lWrist && lWrist.score > MIN_SCORE && lWrist.y < nose.y) {
+        isArmUp = true;
+      }
+      
+      if (rWrist && rWrist.score > MIN_SCORE && rWrist.y < nose.y) {
+        isArmUp = true;
       }
 
-      // Si AL MENOS UN BRAZO está arriba de la cara
       if (isArmUp) {
         consecutiveFramesRef.current += 1;
         console.log(`Brazos arriba detectados: Frame ${consecutiveFramesRef.current}/4`);
 
-        // 4 frames seguidos = 1 segundo de festejo
         if (consecutiveFramesRef.current >= 4) {
           triggerVideoProcessing();
         }
       } else {
-        // Si bajó los brazos, reiniciamos
         consecutiveFramesRef.current = 0;
       }
     } else {
-      // Si no detecta la cara o los hombros, reiniciamos
       consecutiveFramesRef.current = 0;
     }
   };
 
-  // Función que se ejecuta cuando se cumple el objetivo
   const triggerVideoProcessing = async () => {
-    isProcessingVideoRef.current = true; // Ponemos el candado
-    consecutiveFramesRef.current = 0; // Reiniciamos el contador
-    
-    // === ENCENDEMOS EL AVISO VISUAL ===
+    isProcessingVideoRef.current = true; 
+    consecutiveFramesRef.current = 0; 
     setIsFestejoDetected(true);
     
     console.log("🎉 ¡FESTEJO DETECTADO CORRECTAMENTE! 🎉");
     
-    // 1. Verificamos que haya video en el buffer
     if (chunksRef.current.length === 0) {
-      console.warn("No hay fragmentos de video en el buffer todavía.");
       isProcessingVideoRef.current = false;
       setIsFestejoDetected(false);
       return;
     }
 
-    // Calculamos los segundos reales que tenemos grabados (cada chunk es de 5s)
-    const segundosGrabados = chunksRef.current.length * 5;
-    console.log(`Bloqueando cámara temporalmente y preparando video de ${segundosGrabados}s...`);
-
-    // 2. Unimos los fragmentos en un único archivo (Blob)
     const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' }); 
-    
-    // 3. Preparamos el FormData para el envío
     const formData = new FormData();
     formData.append('video', videoBlob, 'festejo-padel.webm');
 
     try {
-      console.log("Enviando video al servidor Node.js...");
-      
-      // Reemplaza esta URL por la ruta real de tu backend
-      const response = await axios.post('http://localhost:3000/api/videos/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
+      await axios.post('http://localhost:3000/api/videos/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
-
-      console.log("¡Video enviado con éxito a Cloudinary!", response.data);
-      
-      // Limpiamos el buffer para empezar a grabar el siguiente punto desde cero
-      chunksRef.current = [];
     } catch (error) {
       console.error("Error al enviar el video vía Axios:", error);
     } finally {
-      // Ocultamos el cartel visual después de 3 segundos
       setTimeout(() => {
         setIsFestejoDetected(false);
       }, 3000);
 
-      // 4. Cooldown: Esperamos 5 segundos antes de volver a detectar festejos
       setTimeout(() => {
         isProcessingVideoRef.current = false;
-        console.log("Sistema listo para detectar un nuevo festejo.");
       }, 5000); 
     }
   };
@@ -350,37 +276,27 @@ const SmartCamera = () => {
   // === RENDERIZADO (UI) ===
   return (
     <div style={styles.container}>
-      {/* Contenedor principal de la cámara */}
       <div style={styles.cameraWrapper}>
-        <video 
-          ref={videoRef} 
-          autoPlay 
-          playsInline 
-          muted 
-          style={styles.video}
-        />
-        
-        {/* === CANVAS DE DEPURACIÓN VISIBLE === */}
-        {/* Superpuesto al video para ver los puntos en tiempo real */}
+        <video ref={videoRef} autoPlay playsInline muted style={styles.video} />
         <canvas ref={canvasRef} style={styles.debugCanvas} />
         
-        {/* Guía Visual (ROI - Región de Interés) superpuesta con zonas rojas (Franjas horizontales) */}
+        {/* === GUÍAS DE ORIENTACIÓN PARA EL USUARIO === */}
         {isCameraActive && (
-          <div style={styles.overlayContainer}>
-            {/* 20% Superior - Rojo Transparente */}
-            <div style={styles.sideArea}></div>
+          <>
+            <div style={styles.topGuide}>▲ TECHO / PARTE SUPERIOR ▲</div>
+            <div style={styles.bottomGuide}>▼ PISO / PARTE INFERIOR ▼</div>
             
-            {/* 60% Central - Zona de Detección más amplia */}
-            <div style={styles.centerROI}>
-              <p style={styles.roiText}>ZONA DE FESTEJO</p>
+            <div style={styles.overlayContainer}>
+              <div style={styles.sideArea}></div>
+              <div style={styles.centerROI}>
+                <p style={styles.roiText}>ZONA DE FESTEJO</p>
+              </div>
+              <div style={styles.sideArea}></div>
             </div>
-            
-            {/* 20% Inferior - Rojo Transparente */}
-            <div style={styles.sideArea}></div>
-          </div>
+          </>
         )}
 
-        {/* === CARTEL DE FESTEJO DETECTADO === */}
+        {/* CARTEL DE FESTEJO DETECTADO */}
         {isFestejoDetected && (
           <div style={styles.successOverlay}>
             <h2 style={styles.successText}>¡FESTEJO DETECTADO! 🎥</h2>
@@ -388,11 +304,10 @@ const SmartCamera = () => {
         )}
       </div>
 
-      {/* Panel de Controles Flotante (Lado derecho en horizontal) */}
       <div style={styles.controls}>
         <button 
           onClick={toggleMasterSwitch} 
-          disabled={isLoadingModel} // Deshabilitado hasta que la IA esté lista
+          disabled={isLoadingModel} 
           style={{
             ...styles.masterButton, 
             backgroundColor: isLoadingModel ? '#6c757d' : (isCameraActive ? '#dc3545' : '#28a745')
@@ -412,7 +327,7 @@ const styles = {
     width: '100vw',
     height: '100vh',
     backgroundColor: '#000',
-    overflow: 'hidden' // Evita scroll innecesario
+    overflow: 'hidden'
   },
   cameraWrapper: {
     position: 'absolute',
@@ -425,7 +340,7 @@ const styles = {
   video: {
     width: '100%',
     height: '100%',
-    objectFit: 'cover', // Asegura que el video llene toda la pantalla sin distorsionarse
+    objectFit: 'cover',
   },
   debugCanvas: {
     position: 'absolute',
@@ -433,9 +348,37 @@ const styles = {
     left: 0,
     width: '100%',
     height: '100%',
-    objectFit: 'cover', // CLAVE: para que los puntos coincidan con la escala del video
-    pointerEvents: 'none', // Para que los clics pasen a través del canvas
+    objectFit: 'cover', 
+    pointerEvents: 'none',
     zIndex: 2
+  },
+  topGuide: {
+    position: 'absolute',
+    top: '10px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    color: '#fff',
+    padding: '4px 15px',
+    borderRadius: '10px',
+    fontSize: '12px',
+    fontWeight: 'bold',
+    letterSpacing: '1px',
+    zIndex: 6
+  },
+  bottomGuide: {
+    position: 'absolute',
+    bottom: '10px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    color: '#fff',
+    padding: '4px 15px',
+    borderRadius: '10px',
+    fontSize: '12px',
+    fontWeight: 'bold',
+    letterSpacing: '1px',
+    zIndex: 6
   },
   overlayContainer: {
     position: 'absolute',
@@ -444,31 +387,30 @@ const styles = {
     width: '100%',
     height: '100%',
     display: 'flex',
-    flexDirection: 'column', // ← Esto apila las áreas verticalmente en modo horizontal
-    pointerEvents: 'none', // Para que no interfiera con toques en la pantalla
+    flexDirection: 'column', 
+    pointerEvents: 'none', 
     zIndex: 5
   },
   sideArea: {
-    flex: 1, // Ocupa 1 parte (20% aprox)
-    backgroundColor: 'rgba(255, 0, 0, 0.3)', // Rojo semi-transparente
+    flex: 1, 
+    backgroundColor: 'rgba(255, 0, 0, 0.2)', 
     width: '100%' 
   },
   centerROI: {
-    flex: 3, // Ocupa 3 partes (60% aprox, mucho más grande ahora)
+    flex: 3, 
     width: '100%',
-    borderTop: '3px dashed rgba(255, 255, 255, 0.7)', 
-    borderBottom: '3px dashed rgba(255, 255, 255, 0.7)',
+    borderTop: '2px dashed rgba(255, 255, 255, 0.5)', 
+    borderBottom: '2px dashed rgba(255, 255, 255, 0.5)',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center' 
   },
   roiText: {
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: 'rgba(255, 255, 255, 0.8)',
     fontWeight: 'bold',
-    fontSize: '16px',
+    fontSize: '14px',
     letterSpacing: '2px',
-    textShadow: '0px 0px 6px rgba(0,0,0,0.9)', 
-    textAlign: 'center'
+    textShadow: '0px 0px 4px rgba(0,0,0,0.9)', 
   },
   controls: {
     position: 'absolute',
@@ -501,7 +443,7 @@ const styles = {
     top: '50%',
     left: '50%',
     transform: 'translate(-50%, -50%)',
-    backgroundColor: 'rgba(40, 167, 69, 0.9)', // Verde éxito
+    backgroundColor: 'rgba(40, 167, 69, 0.9)', 
     padding: '20px 40px',
     borderRadius: '15px',
     zIndex: 20,
