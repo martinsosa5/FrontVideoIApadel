@@ -137,7 +137,7 @@ const SmartCamera = () => {
     }, 250);
   };
 
-  // === LÓGICA MATEMÁTICA ROTADA (EJE X) ===
+  // === LÓGICA MATEMÁTICA OBLIGATORIA DE 2 BRAZOS ===
   const processPoseKeypoints = (keypoints, ctx) => {
     const MIN_SCORE = 0.2; 
 
@@ -164,19 +164,14 @@ const SmartCamera = () => {
     const rWrist = kpDict['right_wrist'];
 
     if (nose && nose.score > MIN_SCORE) {
-      let isArmUp = false;
+      
+      // Evaluamos cada brazo por separado utilizando el eje X corregido
+      const leftArmUp = lWrist && lWrist.score > MIN_SCORE && lWrist.x < nose.x;
+      const rightArmUp = rWrist && rWrist.score > MIN_SCORE && rWrist.x < nose.x;
 
-      // LA MAGIA DE TU DEDUCCIÓN: Evaluamos el EJE X.
-      // El techo es X=0 (el lado contrario al botón).
-      // Si la muñeca tiene un valor X menor al de la nariz, significa que está físicamente levantada.
-      if (lWrist && lWrist.score > MIN_SCORE && lWrist.x < nose.x) {
-        isArmUp = true;
-      }
-      if (rWrist && rWrist.score > MIN_SCORE && rWrist.x < nose.x) {
-        isArmUp = true;
-      }
-
-      if (isArmUp) {
+      // CAMBIO CLAVE: Usamos el operador "&&". 
+      // Obliga a que AMBOS brazos estén arriba de la nariz al mismo tiempo.
+      if (leftArmUp && rightArmUp) {
         consecutiveFramesRef.current += 1;
         if (consecutiveFramesRef.current >= 4) {
           triggerVideoProcessing();
@@ -229,13 +224,13 @@ const SmartCamera = () => {
         
         {isCameraActive && (
           <>
-            {/* GUÍAS ROTADAS VISUALMENTE PARA HORIZONTAL */}
+            {/* GUÍA DE ORIENTACIÓN CORREGIDA CON -90DEG */}
             <div style={styles.roofGuide}>▲ TECHO ▲</div>
             
             <div style={styles.overlayContainer}>
               <div style={styles.sideArea}></div>
               <div style={styles.centerROI}>
-                {/* TEXTO ROTADO */}
+                {/* TEXTO DE LA ZONA CORREGIDO */}
                 <p style={styles.roiText}>ZONA DE FESTEJO</p>
               </div>
               <div style={styles.sideArea}></div>
@@ -259,7 +254,7 @@ const SmartCamera = () => {
             backgroundColor: isLoadingModel ? '#6c757d' : (isCameraActive ? '#dc3545' : '#28a745')
           }}
         >
-          {/* TEXTO DEL BOTÓN ROTADO */}
+          {/* TEXTO DEL BOTÓN CORREGIDO CON -90DEG */}
           <span style={styles.rotatedText}>
             {isLoadingModel ? 'Cargando' : (isCameraActive ? 'Detener' : 'Iniciar')}
           </span>
@@ -269,7 +264,7 @@ const SmartCamera = () => {
   );
 };
 
-// === ESTILOS ACTUALIZADOS (ROTACIÓN 90 GRADOS) ===
+// === ESTILOS CORREGIDOS (ROTACIÓN INVERTIDA A -90 GRADOS) ===
 const styles = {
   container: { position: 'relative', width: '100vw', height: '100vh', backgroundColor: '#000', overflow: 'hidden' },
   cameraWrapper: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: '#111' },
@@ -278,25 +273,25 @@ const styles = {
   
   roofGuide: {
     position: 'absolute',
-    left: '20px', // Físicamente el Techo
+    left: '20px', 
     top: '50%',
-    transform: 'translateY(-50%) rotate(90deg)', // Rotado para leerse en horizontal
+    transform: 'translateY(-50%) rotate(-90deg)', // Cambiado a -90deg para voltear las letras hacia arriba
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
     color: '#fff', padding: '8px 15px', borderRadius: '10px', fontSize: '14px', fontWeight: 'bold', letterSpacing: '2px', zIndex: 6
   },
   
   overlayContainer: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', pointerEvents: 'none', zIndex: 5 },
-  sideArea: { flex: 1, backgroundColor: 'rgba(255, 0, 0, 0.2)', width: '100%' }, // Costados físicos
+  sideArea: { flex: 1, backgroundColor: 'rgba(255, 0, 0, 0.2)', width: '100%' }, 
   centerROI: { flex: 3, width: '100%', borderTop: '2px dashed rgba(255, 255, 255, 0.5)', borderBottom: '2px dashed rgba(255, 255, 255, 0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center' },
   
   roiText: {
-    transform: 'rotate(90deg)', // Rotado
+    transform: 'rotate(-90deg)', // Cambiado a -90deg para que se lea al derecho
     color: 'rgba(255, 255, 255, 0.6)', fontWeight: 'bold', fontSize: '24px', letterSpacing: '4px', textShadow: '0px 0px 4px rgba(0,0,0,0.9)',
   },
   
   controls: {
     position: 'absolute',
-    right: '30px', // Físicamente los pies
+    right: '30px', 
     top: '50%',
     transform: 'translateY(-50%)',
     zIndex: 10, display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'auto'
@@ -305,13 +300,13 @@ const styles = {
     padding: '0', width: '100px', height: '100px', color: '#fff', border: '4px solid #fff', borderRadius: '50%', cursor: 'pointer', boxShadow: '0 4px 15px rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center'
   },
   rotatedText: {
-    transform: 'rotate(90deg)', // El texto del botón ahora se lee en horizontal
+    transform: 'rotate(-90deg)', // Cambiado a -90deg para que las letras del botón apunten bien
     fontSize: '16px', fontWeight: 'bold', letterSpacing: '1px'
   },
   
   successOverlay: {
     position: 'absolute', top: '50%', left: '50%',
-    transform: 'translate(-50%, -50%) rotate(90deg)', // Cartel verde rotado
+    transform: 'translate(-50%, -50%) rotate(-90deg)', // Cartel verde corregido a -90deg
     backgroundColor: 'rgba(40, 167, 69, 0.95)', padding: '30px 50px', borderRadius: '20px', zIndex: 20, boxShadow: '0 10px 40px rgba(0,0,0,0.8)'
   },
   successText: { color: '#fff', margin: 0, fontSize: '32px', fontWeight: 'bold', textAlign: 'center', letterSpacing: '2px' }
