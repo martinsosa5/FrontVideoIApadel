@@ -7,6 +7,7 @@ const SmartCamera = () => {
   // === ESTADOS DE LA UI ===
   const [isCameraActive, setIsCameraActive] = useState(false);
   const [isLoadingModel, setIsLoadingModel] = useState(true); // Estado para la carga de la IA
+  const [isFestejoDetected, setIsFestejoDetected] = useState(false); // NUEVO: Feedback visual
 
   // === REFERENCIAS MUTABLES (Sin re-renderizados) ===
   const videoRef = useRef(null);
@@ -258,15 +259,22 @@ const SmartCamera = () => {
     isProcessingVideoRef.current = true; // Ponemos el candado
     consecutiveFramesRef.current = 0; // Reiniciamos el contador
     
+    // === ENCENDEMOS EL AVISO VISUAL ===
+    setIsFestejoDetected(true);
+    
     console.log("🎉 ¡FESTEJO DETECTADO CORRECTAMENTE! 🎉");
-    console.log("Bloqueando cámara temporalmente y preparando video de 60s...");
     
     // 1. Verificamos que haya video en el buffer
     if (chunksRef.current.length === 0) {
       console.warn("No hay fragmentos de video en el buffer todavía.");
       isProcessingVideoRef.current = false;
+      setIsFestejoDetected(false);
       return;
     }
+
+    // Calculamos los segundos reales que tenemos grabados (cada chunk es de 5s)
+    const segundosGrabados = chunksRef.current.length * 5;
+    console.log(`Bloqueando cámara temporalmente y preparando video de ${segundosGrabados}s...`);
 
     // 2. Unimos los fragmentos en un único archivo (Blob)
     const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' }); 
@@ -274,8 +282,6 @@ const SmartCamera = () => {
     // 3. Preparamos el FormData para el envío
     const formData = new FormData();
     formData.append('video', videoBlob, 'festejo-padel.webm');
-    // Aquí también podrías agregar el ID del partido u otros datos:
-    // formData.append('matchId', '12345');
 
     try {
       console.log("Enviando video al servidor Node.js...");
@@ -288,14 +294,19 @@ const SmartCamera = () => {
       });
 
       console.log("¡Video enviado con éxito a Cloudinary!", response.data);
-      alert("¡Festejo capturado y enviado al servidor!");
-
+      // alert("¡Festejo capturado y enviado al servidor!"); // Lo comento para que no moleste en el celular
+      
       // Limpiamos el buffer para empezar a grabar el siguiente punto desde cero
       chunksRef.current = [];
     } catch (error) {
       console.error("Error al enviar el video vía Axios:", error);
-      alert("Hubo un error al subir el video. Revisa la consola.");
+      // alert("Hubo un error al subir el video. Revisa la consola.");
     } finally {
+      // Ocultamos el cartel visual después de 3 segundos
+      setTimeout(() => {
+        setIsFestejoDetected(false);
+      }, 3000);
+
       // 4. Cooldown: Esperamos 5 segundos antes de volver a detectar festejos
       // Esto evita que se disparen múltiples videos si siguen festejando
       setTimeout(() => {
