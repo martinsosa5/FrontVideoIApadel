@@ -243,7 +243,6 @@ const SmartCamera = ({ onBack }) => {
     try {
       console.log("Subiendo video directo a Cloudinary...");
       
-      // Hacemos el POST directo a la API de Cloudinary usando TU cloud_name (dzo2wt8ir)
       const response = await axios.post(
         'https://api.cloudinary.com/v1_1/dzo2wt8ir/video/upload', 
         formData
@@ -252,7 +251,21 @@ const SmartCamera = ({ onBack }) => {
       console.log("¡Video subido con éxito! 🚀");
       console.log("URL Pública del video para mirar:", response.data.secure_url);
       
-      chunksRef.current = [];
+      // === EL FIX: REINICIO DEL GRABADOR ===
+      // 1. Frenamos el grabador para cortar el video viejo
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
+      
+      // 2. Vaciamos la memoria
+      chunksRef.current = []; 
+      
+      // 3. Lo volvemos a arrancar inmediatamente para generar los encabezados del video nuevo
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'inactive') {
+        mediaRecorderRef.current.start(5000);
+      }
+      // =====================================
+
     } catch (error) {
       console.error("Error al enviar el video a Cloudinary:", error);
     } finally {
