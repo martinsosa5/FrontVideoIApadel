@@ -65,7 +65,7 @@ const SmartCamera = ({ onBack }) => {
         ? { deviceId: { exact: specificDeviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
         : { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } };
 
-      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: true });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
 
