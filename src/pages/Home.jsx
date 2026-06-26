@@ -6,6 +6,7 @@ import PartidosPreview from '../components/PartidosPreview/PartidosPreview';
 import Organiza from '../components/Organiza/Organiza';
 import AfterParty from '../components/AfterParty/AfterParty';
 import SmartCamera from '../components/SmartCamera/SmartCamera';
+import SmartCameraModule from '../components/SmartCamera/SmartCameraModule';
 
 function Home() {
   return (
@@ -14,7 +15,7 @@ function Home() {
       <PartidosPreview /> 
       <JugadoresPreview />
       <Organiza /> */}
-      <SmartCamera />
+      <SmartCameraModule />
     </>
   );
 }
