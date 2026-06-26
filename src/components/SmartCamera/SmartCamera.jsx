@@ -14,7 +14,7 @@ const SmartCamera = () => {
   const streamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const chunksRef = useRef([]); // Buffer circular de video
-  const canvasRef = useRef(null); // Canvas oculto para recortar la ROI
+  const canvasRef = useRef(null); // Canvas oculto para recortar la ROI (Ya no recorta, pero se mantiene por estructura)
   const detectorRef = useRef(null); // Instancia del detector de TensorFlow
   const detectionIntervalRef = useRef(null); // Referencia del bucle de la IA
   
@@ -165,37 +165,16 @@ const SmartCamera = () => {
     // 250ms de intervalo = 4 ejecuciones por segundo (ideal para batería de celular)
     detectionIntervalRef.current = setInterval(async () => {
       // Si estamos procesando un video o falta algo, cortamos ejecución
-      if (isProcessingVideoRef.current || !videoRef.current || !detectorRef.current || !canvasRef.current) return;
+      if (isProcessingVideoRef.current || !videoRef.current || !detectorRef.current) return;
 
       const video = videoRef.current;
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
 
       // Validamos que el video tenga dimensiones reales antes de procesar
       if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
-      // Calculamos las dimensiones del tercio central (ROI horizontal)
-      const sourceX = 0;
-      const sourceY = video.videoHeight / 3;
-      const sourceWidth = video.videoWidth;
-      const sourceHeight = video.videoHeight / 3;
-
-      // Ajustamos el tamaño interno del canvas oculto al tamaño del recorte
-      if (canvas.width !== sourceWidth || canvas.height !== sourceHeight) {
-        canvas.width = sourceWidth;
-        canvas.height = sourceHeight;
-      }
-
-      // Dibujamos EXCLUSIVAMENTE el fragmento central en el canvas oculto
-      ctx.drawImage(
-        video,
-        sourceX, sourceY, sourceWidth, sourceHeight, // Origen (Video)
-        0, 0, sourceWidth, sourceHeight              // Destino (Canvas)
-      );
-
       try {
-        // Pasamos solo el canvas recortado al modelo de IA
-        const poses = await detectorRef.current.estimatePoses(canvas);
+        // PASAMOS EL VIDEO ENTERO A LA IA: Evita problemas de recortes y escalas
+        const poses = await detectorRef.current.estimatePoses(video);
         
         if (poses && poses.length > 0) {
           processPoseKeypoints(poses[0].keypoints);
@@ -222,10 +201,10 @@ const SmartCamera = () => {
     const lWrist = kpDict['left_wrist'];
     const rWrist = kpDict['right_wrist'];
 
-    // Confianza mínima para evitar falsos positivos (0.4 = 40% de certeza)
-    const MIN_SCORE = 0.4;
+    // CALIBRACIÓN: Bajamos la confianza a 0.3 (30%) para ser más tolerantes de lejos
+    const MIN_SCORE = 0.3;
 
-    // Verificamos que la IA esté viendo los 4 puntos con buena claridad
+    // Verificamos que la IA esté viendo los 4 puntos con claridad
     if (
       lShoulder && lShoulder.score > MIN_SCORE &&
       rShoulder && rShoulder.score > MIN_SCORE &&
@@ -238,10 +217,10 @@ const SmartCamera = () => {
 
       if (leftArmUp && rightArmUp) {
         consecutiveFramesRef.current += 1;
-        console.log(`Brazos arriba detectados: Frame ${consecutiveFramesRef.current}/8`);
+        console.log(`Brazos arriba detectados: Frame ${consecutiveFramesRef.current}/4`);
 
-        // Si llegamos a 8 frames seguidos (8 * 250ms = 2000ms = 2 segundos)
-        if (consecutiveFramesRef.current >= 8) {
+        // CALIBRACIÓN: 4 frames seguidos (4 * 250ms = 1 segundo) en lugar de 2 segundos
+        if (consecutiveFramesRef.current >= 4) {
           triggerVideoProcessing();
         }
       } else {
@@ -254,7 +233,7 @@ const SmartCamera = () => {
     }
   };
 
-// Función que se ejecuta cuando se cumple el objetivo
+  // Función que se ejecuta cuando se cumple el objetivo
   const triggerVideoProcessing = async () => {
     isProcessingVideoRef.current = true; // Ponemos el candado
     consecutiveFramesRef.current = 0; // Reiniciamos el contador
@@ -294,13 +273,11 @@ const SmartCamera = () => {
       });
 
       console.log("¡Video enviado con éxito a Cloudinary!", response.data);
-      // alert("¡Festejo capturado y enviado al servidor!"); // Lo comento para que no moleste en el celular
       
       // Limpiamos el buffer para empezar a grabar el siguiente punto desde cero
       chunksRef.current = [];
     } catch (error) {
       console.error("Error al enviar el video vía Axios:", error);
-      // alert("Hubo un error al subir el video. Revisa la consola.");
     } finally {
       // Ocultamos el cartel visual después de 3 segundos
       setTimeout(() => {
@@ -308,7 +285,6 @@ const SmartCamera = () => {
       }, 3000);
 
       // 4. Cooldown: Esperamos 5 segundos antes de volver a detectar festejos
-      // Esto evita que se disparen múltiples videos si siguen festejando
       setTimeout(() => {
         isProcessingVideoRef.current = false;
         console.log("Sistema listo para detectar un nuevo festejo.");
@@ -337,22 +313,26 @@ const SmartCamera = () => {
           style={styles.video}
         />
         
-        {/* Canvas totalmente oculto para procesar el recorte de la IA */}
-        <canvas ref={canvasRef} style={{ display: 'none' }} />
-        
         {/* Guía Visual (ROI - Región de Interés) superpuesta con zonas rojas (Franjas horizontales) */}
         {isCameraActive && (
           <div style={styles.overlayContainer}>
-            {/* 1/3 Superior - Rojo Transparente */}
+            {/* 20% Superior - Rojo Transparente */}
             <div style={styles.sideArea}></div>
             
-            {/* 1/3 Central - Zona de Detección */}
+            {/* 60% Central - Zona de Detección más amplia */}
             <div style={styles.centerROI}>
               <p style={styles.roiText}>ZONA DE FESTEJO</p>
             </div>
             
-            {/* 1/3 Inferior - Rojo Transparente */}
+            {/* 20% Inferior - Rojo Transparente */}
             <div style={styles.sideArea}></div>
+          </div>
+        )}
+
+        {/* === CARTEL DE FESTEJO DETECTADO === */}
+        {isFestejoDetected && (
+          <div style={styles.successOverlay}>
+            <h2 style={styles.successText}>¡FESTEJO DETECTADO! 🎥</h2>
           </div>
         )}
       </div>
@@ -374,7 +354,7 @@ const SmartCamera = () => {
   );
 };
 
-// === ESTILOS ACTUALIZADOS PARA FRANJAS HORIZONTALES ===
+// === ESTILOS ACTUALIZADOS ===
 const styles = {
   container: {
     position: 'relative',
@@ -408,25 +388,25 @@ const styles = {
     zIndex: 5
   },
   sideArea: {
-    flex: 1, // Ocupa 1 parte (1/3 del alto total)
+    flex: 1, // Ocupa 1 parte (20% aprox)
     backgroundColor: 'rgba(255, 0, 0, 0.3)', // Rojo semi-transparente
-    width: '100%' // Ahora ocupa todo el ancho
+    width: '100%' 
   },
   centerROI: {
-    flex: 1, // Ocupa 1 parte (1/3 del alto total)
-    width: '100%', // Ahora ocupa todo el ancho
-    borderTop: '3px dashed rgba(255, 255, 255, 0.7)', // Bordes horizontales
+    flex: 3, // Ocupa 3 partes (60% aprox, mucho más grande ahora)
+    width: '100%',
+    borderTop: '3px dashed rgba(255, 255, 255, 0.7)', 
     borderBottom: '3px dashed rgba(255, 255, 255, 0.7)',
     display: 'flex',
     justifyContent: 'center',
-    alignItems: 'center' // Centramos el texto dentro de la franja
+    alignItems: 'center' 
   },
   roiText: {
     color: 'rgba(255, 255, 255, 0.9)',
     fontWeight: 'bold',
     fontSize: '16px',
     letterSpacing: '2px',
-    textShadow: '0px 0px 6px rgba(0,0,0,0.9)', // Sombra para mejor legibilidad sobre el video
+    textShadow: '0px 0px 6px rgba(0,0,0,0.9)', 
     textAlign: 'center'
   },
   controls: {
@@ -438,15 +418,15 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    pointerEvents: 'auto' // Aseguramos que el botón reciba los clics por encima de las capas
+    pointerEvents: 'auto' 
   },
   masterButton: {
     padding: '20px',
     width: '100px',
     height: '100px',
     color: '#fff',
-    border: '3px solid #fff', // Borde blanco estilo cámara nativa
-    borderRadius: '50%', // Botón circular
+    border: '3px solid #fff', 
+    borderRadius: '50%', 
     fontSize: '14px',
     fontWeight: 'bold',
     cursor: 'pointer',
@@ -454,6 +434,25 @@ const styles = {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center'
+  },
+  successOverlay: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    backgroundColor: 'rgba(40, 167, 69, 0.9)', // Verde éxito
+    padding: '20px 40px',
+    borderRadius: '15px',
+    zIndex: 20,
+    boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+  },
+  successText: {
+    color: '#fff',
+    margin: 0,
+    fontSize: '24px',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    letterSpacing: '1px'
   }
 };
 
