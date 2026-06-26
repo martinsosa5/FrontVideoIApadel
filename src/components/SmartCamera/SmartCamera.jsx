@@ -199,31 +199,32 @@ const SmartCamera = () => {
     }, 250);
   };
 
-  // === LÓGICA MATEMÁTICA DEL TRIGGER ===
+  // === LÓGICA MATEMÁTICA DEL TRIGGER (OPTIMIZADA) ===
   const processPoseKeypoints = (keypoints, ctx) => {
     
-    // CALIBRACIÓN: Bajamos la confianza a 0.3 (30%) para ser más tolerantes de lejos
-    const MIN_SCORE = 0.3;
+    // Bajamos la confianza a 20% para extremidades que se mueven rápido
+    const MIN_SCORE = 0.2; 
 
-    // === NUEVO: DIBUJAMOS LOS PUNTOS DE RASTREO VISUAL ===
+    // === DIBUJAMOS LOS PUNTOS DE RASTREO VISUAL ===
     if (ctx) {
       keypoints.forEach(kp => {
         if (kp.score > MIN_SCORE) {
           ctx.beginPath();
-          ctx.arc(kp.x, kp.y, 8, 0, 2 * Math.PI); // Círculos de 8px
+          ctx.arc(kp.x, kp.y, 8, 0, 2 * Math.PI); 
           
-          // Muñecas y hombros en amarillo, el resto del cuerpo en rojo
-          if (['left_wrist', 'right_wrist', 'left_shoulder', 'right_shoulder'].includes(kp.name)) {
-            ctx.fillStyle = '#ffc107'; // Amarillo Bootstrap
+          // Nariz en AZUL, Muñecas en AMARILLO, resto en ROJO
+          if (kp.name === 'nose') {
+            ctx.fillStyle = '#0d6efd'; // Azul
+          } else if (['left_wrist', 'right_wrist'].includes(kp.name)) {
+            ctx.fillStyle = '#ffc107'; // Amarillo
           } else {
-            ctx.fillStyle = '#dc3545'; // Rojo Bootstrap
+            ctx.fillStyle = '#dc3545'; // Rojo
           }
           
           ctx.fill();
         }
       });
     }
-    // =====================================================
 
     // Convertimos el array en un objeto fácil de leer por nombre
     const kpDict = keypoints.reduce((acc, kp) => {
@@ -231,36 +232,41 @@ const SmartCamera = () => {
       return acc;
     }, {});
 
-    const lShoulder = kpDict['left_shoulder'];
-    const rShoulder = kpDict['right_shoulder'];
+    // NUEVA ANCLA: Usamos la nariz en lugar de los hombros
+    const nose = kpDict['nose'];
     const lWrist = kpDict['left_wrist'];
     const rWrist = kpDict['right_wrist'];
 
-    // Verificamos que la IA esté viendo los 4 puntos con claridad
-    if (
-      lShoulder && lShoulder.score > MIN_SCORE &&
-      rShoulder && rShoulder.score > MIN_SCORE &&
-      lWrist && lWrist.score > MIN_SCORE &&
-      rWrist && rWrist.score > MIN_SCORE
-    ) {
-      // Condición: La coordenada Y de la muñeca debe ser MENOR que la del hombro
-      const leftArmUp = lWrist.y < lShoulder.y;
-      const rightArmUp = rWrist.y < rShoulder.y;
+    // Verificamos que la IA esté viendo la NARIZ (es nuestro punto de referencia fuerte)
+    if (nose && nose.score > MIN_SCORE) {
+      
+      let isArmUp = false;
 
-      if (leftArmUp && rightArmUp) {
+      // Verificamos si la muñeca izquierda está por encima de la nariz (Y menor significa más arriba en la pantalla)
+      if (lWrist && lWrist.score > MIN_SCORE && lWrist.y < nose.y) {
+        isArmUp = true;
+      }
+      
+      // Verificamos si la muñeca derecha está por encima de la nariz
+      if (rWrist && rWrist.score > MIN_SCORE && rWrist.y < nose.y) {
+        isArmUp = true;
+      }
+
+      // Si AL MENOS UN BRAZO está arriba de la cara
+      if (isArmUp) {
         consecutiveFramesRef.current += 1;
         console.log(`Brazos arriba detectados: Frame ${consecutiveFramesRef.current}/4`);
 
-        // CALIBRACIÓN: 4 frames seguidos (4 * 250ms = 1 segundo) en lugar de 2 segundos
+        // 4 frames seguidos = 1 segundo de festejo
         if (consecutiveFramesRef.current >= 4) {
           triggerVideoProcessing();
         }
       } else {
-        // Si bajó los brazos, reiniciamos el contador a 0
+        // Si bajó los brazos, reiniciamos
         consecutiveFramesRef.current = 0;
       }
     } else {
-      // Si la IA perdió de vista las muñecas, reiniciamos a 0
+      // Si no detecta la cara, reiniciamos
       consecutiveFramesRef.current = 0;
     }
   };
