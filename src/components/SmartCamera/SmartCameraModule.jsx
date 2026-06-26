@@ -28,17 +28,87 @@ const CameraHomeMenu = ({ onNavigate, onExitModule }) => {
   );
 };
 
-// === COMPONENTE DE GALERÍA (PLACEHOLDER AISLADO) ===
+// === COMPONENTE DE GALERÍA DE CLIPS (FUNCIONAL) ===
 const CameraGallery = ({ onBack }) => {
+  // Estado para controlar qué video se está reproduciendo en pantalla completa
+  const [selectedVideo, setSelectedVideo] = useState(null);
+
+  // MOCK DATA: Videos de prueba simulando lo que devolverá Cloudinary
+  const mockVideos = [
+    { id: 1, url: 'https://www.w3schools.com/html/mov_bbb.mp4', date: '26 Jun 2026 - 10:15', duration: '0:05' },
+    { id: 2, url: 'https://www.w3schools.com/html/mov_bbb.mp4', date: '26 Jun 2026 - 11:30', duration: '0:06' },
+    { id: 3, url: 'https://www.w3schools.com/html/mov_bbb.mp4', date: '26 Jun 2026 - 12:45', duration: '0:04' },
+    { id: 4, url: 'https://www.w3schools.com/html/mov_bbb.mp4', date: '26 Jun 2026 - 14:20', duration: '0:07' },
+  ];
+
   return (
     <div style={styles.moduleMenuContainer}>
+      
+      {/* Header con botón de volver */}
       <div style={styles.exitBar}>
-        <button style={styles.exitButton} onClick={onBack}>⬅ Volver</button>
+        <button style={styles.exitButton} onClick={onBack}>⬅ Volver al Menú</button>
       </div>
-      <div style={{...styles.content, color: '#fff'}}>
-        <h2>🎬 Galería de Clips</h2>
-        <p style={{ opacity: 0.7 }}>Próximamente... Aquí visualizarás tus grabaciones.</p>
+
+      <div style={styles.galleryContent}>
+        <h2 style={styles.galleryTitle}>🎬 Mis Clips de Festejo</h2>
+        <p style={styles.gallerySubtitle}>Tus mejores momentos grabados por NexaIA</p>
+
+        {/* Grilla de Videos */}
+        <div style={styles.videoGrid}>
+          {mockVideos.map((video, index) => (
+            <div key={video.id} style={styles.videoCard}>
+              
+              {/* Miniatura / Contenedor del video */}
+              <div 
+                style={styles.thumbnailContainer} 
+                onClick={() => setSelectedVideo(video)}
+              >
+                {/* Usamos el mismo video pausado como miniatura */}
+                <video src={video.url} style={styles.thumbnailVideo} />
+                <div style={styles.playIconOverlay}>▶</div>
+                <span style={styles.durationBadge}>{video.duration}</span>
+              </div>
+
+              {/* Información del Clip */}
+              <div style={styles.videoInfo}>
+                <h4 style={styles.videoName}>Festejo #{mockVideos.length - index}</h4>
+                <p style={styles.videoDate}>{video.date}</p>
+              </div>
+
+              {/* Botón de Descarga */}
+              <a 
+                href={video.url} 
+                download={`Festejo_NexaPadel_${video.id}.mp4`} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                style={styles.downloadButton}
+              >
+                ⬇ Descargar Clip
+              </a>
+            </div>
+          ))}
+        </div>
       </div>
+
+      {/* === MODAL DE REPRODUCCIÓN (PANTALLA COMPLETA) === */}
+      {selectedVideo && (
+        <div style={styles.modalOverlay}>
+          <button style={styles.closeModalButton} onClick={() => setSelectedVideo(null)}>
+            ❌ Cerrar
+          </button>
+          
+          <div style={styles.modalVideoContainer}>
+            <video 
+              src={selectedVideo.url} 
+              controls // Habilita play, pausa, adelantar, etc.
+              autoPlay 
+              style={styles.modalVideo}
+            />
+            <h3 style={styles.modalVideoTitle}>Reproduciendo: Festejo</h3>
+            <p style={styles.modalVideoDate}>{selectedVideo.date}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -127,5 +197,174 @@ const styles = {
     borderRadius: '8px',
     fontWeight: 'bold',
     cursor: 'pointer'
-  }
+  },
+  // === ESTILOS DE LA GALERÍA ===
+  galleryContent: {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '0 20px 40px 20px',
+    width: '100%',
+    boxSizing: 'border-box',
+    maxWidth: '1200px',
+    margin: '0 auto'
+  },
+  galleryTitle: {
+    color: '#fff',
+    fontSize: '32px',
+    margin: '0 0 10px 0',
+    textAlign: 'center',
+    textShadow: '0 2px 4px rgba(0,0,0,0.5)'
+  },
+  gallerySubtitle: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: '16px',
+    marginBottom: '40px',
+    textAlign: 'center'
+  },
+  videoGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', // Se adapta a celular y a PC
+    gap: '25px',
+    width: '100%'
+  },
+  videoCard: {
+    background: 'rgba(255, 255, 255, 0.03)',
+    backdropFilter: 'blur(10px)',
+    border: '1px solid rgba(10, 89, 253, 0.3)', // Borde celeste sutil
+    borderRadius: '20px',
+    padding: '15px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px',
+    transition: 'transform 0.2s',
+    boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.2)',
+  },
+  thumbnailContainer: {
+    position: 'relative',
+    width: '100%',
+    height: '160px',
+    backgroundColor: '#000',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    cursor: 'pointer',
+    border: '1px solid rgba(255, 255, 255, 0.1)'
+  },
+  thumbnailVideo: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    opacity: 0.7
+  },
+  playIconOverlay: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    backgroundColor: 'rgba(10, 89, 253, 0.8)', // Celeste NexaPadel
+    color: '#fff',
+    width: '50px',
+    height: '50px',
+    borderRadius: '50%',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    fontSize: '20px',
+    paddingLeft: '4px', // Centra visualmente el triángulo de play
+    boxSizing: 'border-box',
+    boxShadow: '0 4px 10px rgba(0,0,0,0.5)'
+  },
+  durationBadge: {
+    position: 'absolute',
+    bottom: '10px',
+    right: '10px',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    color: '#fff',
+    fontSize: '12px',
+    padding: '4px 8px',
+    borderRadius: '6px',
+    fontWeight: 'bold'
+  },
+  videoInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '5px'
+  },
+  videoName: {
+    color: '#fff',
+    margin: 0,
+    fontSize: '18px',
+    fontWeight: 'bold'
+  },
+  videoDate: {
+    color: 'rgba(255, 255, 255, 0.5)',
+    margin: 0,
+    fontSize: '14px'
+  },
+  downloadButton: {
+    background: 'transparent',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    color: '#fff',
+    borderRadius: '10px',
+    padding: '10px',
+    textAlign: 'center',
+    textDecoration: 'none',
+    fontWeight: '600',
+    fontSize: '14px',
+    transition: 'all 0.2s',
+    cursor: 'pointer'
+  },
+  
+  // === ESTILOS DEL REPRODUCTOR PANTALLA COMPLETA ===
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    backgroundColor: 'rgba(0, 17, 50, 0.95)', // Fondo oscuro con el azul base
+    zIndex: 9999,
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'column'
+  },
+  closeModalButton: {
+    position: 'absolute',
+    top: '20px',
+    right: '20px',
+    background: 'rgba(255, 255, 255, 0.1)',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    color: '#fff',
+    padding: '10px 20px',
+    borderRadius: '10px',
+    cursor: 'pointer',
+    fontWeight: 'bold',
+    zIndex: 10000
+  },
+  modalVideoContainer: {
+    width: '90%',
+    maxWidth: '800px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '15px'
+  },
+  modalVideo: {
+    width: '100%',
+    borderRadius: '16px',
+    boxShadow: '0 10px 40px rgba(0,0,0,0.8)',
+    border: '2px solid #0a59fd'
+  },
+  modalVideoTitle: {
+    color: '#fff',
+    margin: '10px 0 0 0',
+    fontSize: '24px'
+  },
+  modalVideoDate: {
+    color: 'rgba(255, 255, 255, 0.6)',
+    margin: 0,
+    fontSize: '16px'
+  },
 };
