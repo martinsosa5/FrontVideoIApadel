@@ -1,0 +1,187 @@
+/* src/index.css */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  /* Fondo gris claro/opaco para que resalten los componentes blancos */
+  background-color: #f1f3f5; 
+  color: #212529;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Clases utilitarias personalizadas para el Torneo de Pádel */
+.bg-padel-orange {
+  background-color: #fd8229 !important; /* Tu color naranja por defecto */
+}
+
+.text-padel-orange {
+  color: #fd8229 !important;
+}
+
+.btn-padel-orange {
+  background-color: #fd8229;
+  color: white;
+  border: none;
+  transition: background-color 0.2s ease;
+}
+
+.btn-padel-orange:hover {
+  background-color: #fd8229;
+  color: white;
+}
+
+/* Estilos para la distribución 80/20 exacta en pantallas medianas y grandes */
+@media (min-width: 768px) {
+  .col-news-80 {
+    flex: 0 0 78% !important; /* Dejamos un 2% de margen invisible para el espacio intermedio */
+    max-width: 78% !important;
+  }
+  .col-sponsors-20 {
+    flex: 0 0 20% !important;
+    max-width: 20% !important;
+  }
+}
+
+/* Efecto opcional para que la portada tenga un degradado oscuro sobre la imagen */
+.news-overlay {
+  background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 100%);
+}
+
+/* Nuevo naranja oscuro para diferenciar el área de sponsors del Navbar */
+.bg-padel-dark-orange { 
+  background-color: #b64c00 !important; 
+}
+
+/* =========================================
+   ANIMACIONES PARA EL CARRUSEL DE SPONSORS
+========================================== */
+.sponsor-carousel-container {
+  overflow: hidden; /* Oculta los logos que están fuera del área visible */
+  width: 100%;
+}
+
+/* Carrusel Vertical (Para Computadoras) */
+.sponsor-track-y {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  /* La animación dura 15 segundos y se repite infinitamente */
+  animation: scroll-y 15s linear infinite; 
+}
+
+/* Carrusel Horizontal (Para Celulares) */
+.sponsor-track-x {
+  display: flex;
+  flex-direction: row;
+  gap: 2rem;
+  animation: scroll-x 15s linear infinite;
+}
+
+/* Pausar la animación si el usuario pone el mouse encima */
+.sponsor-track-y:hover, .sponsor-track-x:hover {
+  animation-play-state: paused;
+}
+
+@keyframes scroll-y {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-50%); } 
+}
+
+@keyframes scroll-x {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* =========================================
+   SECCIÓN JUGADORES PREVIEW
+========================================== */
+.bg-jugadores-gradient {
+  /* Empieza en gris muy oscuro y termina en un naranja oscuro profundo */
+  background: linear-gradient(to bottom, #1a1a1a 0%, #522100 100%);
+}
+
+/* =========================================
+   SECCIÓN PARTIDOS PREVIEW
+========================================== */
+.bg-padel-gradient-cards {
+  /* Degradado usando tus tonos naranjas institucionales */
+  background: linear-gradient(135deg, #fa9852 0%, #ac4800 100%);
+  color: white;
+}
+
+/* =========================================
+   ANIMACIONES EN CASCADA PARA EL HERO
+========================================== */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(25px); /* Se desliza desde 25px abajo */
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Clase base para los textos del Hero */
+.hero-animate {
+  opacity: 0; /* Inicia oculto para evitar parpadeos */
+  animation: fadeInUp 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+}
+
+/* Retrasos escalonados para el efecto cascada */
+.delay-1 { animation-delay: 0.1s; }
+.delay-2 { animation-delay: 0.25s; }
+.delay-3 { animation-delay: 0.4s; }
+.delay-4 { animation-delay: 0.55s; }
+.delay-5 { animation-delay: 0.7s; }
+.delay-6 { animation-delay: 0.85s; }
+
+/* =========================================
+   EFECTOS HOVER Y TRANSICIÓN DE PARTIDOS
+========================================== */
+
+/* CORREGIDO: Quitamos !important para que no pise el deslizamiento del scroll.
+  Agregamos 'transform' y 'box-shadow' con transiciones limpias que heredan del contenedor.
+*/
+.card-hover-scale {
+  transition: transform 0.3s ease-out, box-shadow 0.3s ease-out;
+}
+
+.card-hover-scale:hover {
+  transform: translateY(-8px) scale(1.03);
+  box-shadow: 0 15px 30px rgba(0,0,0,0.15);
+}
+
+/* =========================================
+   ANIMACIÓN LATERAL PARA PARTIDOS
+========================================== */
+/* Esta clase base controla la fluidez del deslizamiento. 
+  Al usar 'all', permite tanto la animación de entrada como el efecto de agrandado.
+*/
+.reveal-base {
+  transition: all 1.2s cubic-bezier(0.16, 1, 0.3, 1); 
+}
+
+.reveal-hidden-side {
+  opacity: 0;
+  transform: translateX(-120px); /* Distancia óptima para un recorrido fluido y visible */
+}
+
+.reveal-visible-side {
+  opacity: 1;
+  transform: translateX(0); 
+}
+
+/* =========================================
+   ANIMACIÓN VERTICAL PARA JUGADORES
+========================================== */
+.reveal-hidden-up {
+  opacity: 0;
+  transform: translateY(40px); /* Arranca un poquito más abajo */
+}
+
+.reveal-visible-up {
+  opacity: 1;
+  transform: translateY(0); /* Sube a su posición original */
+}
