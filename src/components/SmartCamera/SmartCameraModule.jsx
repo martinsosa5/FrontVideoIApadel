@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import SmartCamera from './SmartCamera'; // Tu componente de cámara calibrado
 
 // === COMPONENTE AISLADO PARA EL MENÚ DEL MÓDULO ===
@@ -28,18 +28,81 @@ const CameraHomeMenu = ({ onNavigate, onExitModule }) => {
   );
 };
 
-// === COMPONENTE DE GALERÍA DE CLIPS (FUNCIONAL) ===
+// === COMPONENTE DE GALERÍA DE CLIPS (CON BOTÓN DE LIMPIEZA) ===
 const CameraGallery = ({ onBack }) => {
-  // Estado para controlar qué video se está reproduciendo en pantalla completa
   const [selectedVideo, setSelectedVideo] = useState(null);
+  const [myVideos, setMyVideos] = useState([]); 
+  const [downloadingId, setDownloadingId] = useState(null); 
 
-  // MOCK DATA: Videos de prueba simulando lo que devolverá Cloudinary
-  const mockVideos = [
-    { id: 1, url: 'https://www.w3schools.com/html/mov_bbb.mp4', date: '26 Jun 2026 - 10:15', duration: '0:05' },
-    { id: 2, url: 'https://www.w3schools.com/html/mov_bbb.mp4', date: '26 Jun 2026 - 11:30', duration: '0:06' },
-    { id: 3, url: 'https://www.w3schools.com/html/mov_bbb.mp4', date: '26 Jun 2026 - 12:45', duration: '0:04' },
-    { id: 4, url: 'https://www.w3schools.com/html/mov_bbb.mp4', date: '26 Jun 2026 - 14:20', duration: '0:07' },
-  ];
+  // Al cargar la galería, pedimos la lista pública a Cloudinary
+  useEffect(() => {
+    const fetchCloudinaryVideos = async () => {
+      try {
+        // Buscamos el archivo JSON público que Cloudinary genera para los tags
+        const response = await fetch('https://res.cloudinary.com/dzo2wt8ir/video/list/festejos_padel.json');
+        
+        if (!response.ok) {
+          throw new Error('No se encontró la lista o no hay videos aún');
+        }
+
+        const data = await response.json();
+        
+        // Cloudinary devuelve un array "resources". Lo formateamos para nuestra grilla
+        const videoList = data.resources.map((res) => ({
+          id: res.public_id,
+          // Armamos la URL pública usando la versión y el ID
+          url: `https://res.cloudinary.com/dzo2wt8ir/video/upload/v${res.version}/${res.public_id}.${res.format}`,
+          date: 'Clip en la nube',
+          duration: 'NexaIA'
+        }));
+
+        setMyVideos(videoList);
+      } catch (error) {
+        console.warn("Aún no hay videos públicos o falta destildar 'Resource list' en Cloudinary:", error);
+        setMyVideos([]);
+      }
+    };
+
+    fetchCloudinaryVideos();
+  }, []);
+
+  // NUEVA FUNCIÓN: Limpia el LocalStorage y el estado de React
+  const handleClearHistory = () => {
+    // 1. Pedimos confirmación al usuario para no borrar por accidente
+    const confirmDelete = window.confirm("¿Estás seguro de que deseas limpiar el historial local? Esto no borrará los videos de Cloudinary, solo los quitará de esta lista.");
+    
+    if (confirmDelete) {
+      // 2. Removemos la clave específica de la memoria del navegador
+      localStorage.removeItem('nexa_clips');
+      // 3. Vaciamos el estado para que la pantalla se actualice al instante
+      setMyVideos([]);
+    }
+  };
+
+  // Función mágica para forzar la descarga en Safari / Móviles
+  const handleDownload = async (e, video) => {
+    e.preventDefault();
+    if (downloadingId === video.id) return; 
+    setDownloadingId(video.id); 
+
+    try {
+      const response = await fetch(video.url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `Festejo_NexaPadel_${video.id}.webm`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error("Error al forzar la descarga:", error);
+      alert("Hubo un error al descargar el clip. Intenta nuevamente.");
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   return (
     <div style={styles.moduleMenuContainer}>
@@ -53,41 +116,44 @@ const CameraGallery = ({ onBack }) => {
         <h2 style={styles.galleryTitle}>🎬 Mis Clips de Festejo</h2>
         <p style={styles.gallerySubtitle}>Tus mejores momentos grabados por NexaIA</p>
 
-        {/* Grilla de Videos */}
-        <div style={styles.videoGrid}>
-          {mockVideos.map((video, index) => (
-            <div key={video.id} style={styles.videoCard}>
-              
-              {/* Miniatura / Contenedor del video */}
-              <div 
-                style={styles.thumbnailContainer} 
-                onClick={() => setSelectedVideo(video)}
-              >
-                {/* Usamos el mismo video pausado como miniatura */}
-                <video src={video.url} style={styles.thumbnailVideo} />
-                <div style={styles.playIconOverlay}>▶</div>
-                <span style={styles.durationBadge}>{video.duration}</span>
-              </div>
+        {/* Si no hay videos, mostramos mensaje */}
+        {myVideos.length === 0 ? (
+          <div style={{ textAlign: 'center', marginTop: '40px', color: 'rgba(255,255,255,0.6)' }}>
+            <span style={{ fontSize: '40px', display: 'block', marginBottom: '10px' }}>🤷‍♂️</span>
+            <p>Aún no grabaste ningún festejo.</p>
+            <p>¡Ve a la cámara, levanta los brazos y tu video aparecerá aquí!</p>
+          </div>
+        ) : (
+          /* Grilla de Videos Reales */
+          <div style={styles.videoGrid}>
+            {myVideos.map((video, index) => (
+              <div key={video.id} style={styles.videoCard}>
+                
+                <div style={styles.thumbnailContainer} onClick={() => setSelectedVideo(video)}>
+                  <video src={video.url} style={styles.thumbnailVideo} />
+                  <div style={styles.playIconOverlay}>▶</div>
+                  <span style={styles.durationBadge}>{video.duration || 'Clip'}</span>
+                </div>
 
-              {/* Información del Clip */}
-              <div style={styles.videoInfo}>
-                <h4 style={styles.videoName}>Festejo #{mockVideos.length - index}</h4>
-                <p style={styles.videoDate}>{video.date}</p>
-              </div>
+                <div style={styles.videoInfo}>
+                  <h4 style={styles.videoName}>Festejo #{myVideos.length - index}</h4>
+                  <p style={styles.videoDate}>{video.date}</p>
+                </div>
 
-              {/* Botón de Descarga */}
-              <a 
-                href={video.url} 
-                download={`Festejo_NexaPadel_${video.id}.mp4`} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                style={styles.downloadButton}
-              >
-                ⬇ Descargar Clip
-              </a>
-            </div>
-          ))}
-        </div>
+                <button 
+                  onClick={(e) => handleDownload(e, video)}
+                  style={{
+                    ...styles.downloadButton,
+                    opacity: downloadingId === video.id ? 0.5 : 1
+                  }}
+                  disabled={downloadingId === video.id}
+                >
+                  {downloadingId === video.id ? '⏳ Descargando...' : '⬇ Descargar Clip'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* === MODAL DE REPRODUCCIÓN (PANTALLA COMPLETA) === */}
@@ -100,7 +166,7 @@ const CameraGallery = ({ onBack }) => {
           <div style={styles.modalVideoContainer}>
             <video 
               src={selectedVideo.url} 
-              controls // Habilita play, pausa, adelantar, etc.
+              controls
               autoPlay 
               style={styles.modalVideo}
             />
@@ -114,7 +180,6 @@ const CameraGallery = ({ onBack }) => {
 };
 
 // === ENRUTADOR INTERNO DEL MÓDULO ===
-// onExit es una prop que podés llamar para volver a tu app principal del torneo
 export default function SmartCameraModule({ onExit }) {
   const [currentInternalView, setCurrentInternalView] = useState('home');
 
@@ -225,7 +290,7 @@ const styles = {
   },
   videoGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', // Se adapta a celular y a PC
+    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
     gap: '25px',
     width: '100%'
   },
@@ -271,7 +336,7 @@ const styles = {
     justifyContent: 'center',
     alignItems: 'center',
     fontSize: '20px',
-    paddingLeft: '4px', // Centra visualmente el triángulo de play
+    paddingLeft: '4px',
     boxSizing: 'border-box',
     boxShadow: '0 4px 10px rgba(0,0,0,0.5)'
   },
@@ -323,7 +388,7 @@ const styles = {
     left: 0,
     width: '100vw',
     height: '100vh',
-    backgroundColor: 'rgba(0, 17, 50, 0.95)', // Fondo oscuro con el azul base
+    backgroundColor: 'rgba(0, 17, 50, 0.95)',
     zIndex: 9999,
     display: 'flex',
     justifyContent: 'center',
