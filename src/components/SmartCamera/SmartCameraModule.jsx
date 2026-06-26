@@ -28,7 +28,7 @@ const CameraHomeMenu = ({ onNavigate, onExitModule }) => {
   );
 };
 
-// === COMPONENTE DE GALERÍA DE CLIPS (CON BOTÓN DE LIMPIEZA) ===
+// === COMPONENTE DE GALERÍA DE CLIPS (CONVERSIÓN A MP4) ===
 const CameraGallery = ({ onBack }) => {
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [myVideos, setMyVideos] = useState([]); 
@@ -38,7 +38,6 @@ const CameraGallery = ({ onBack }) => {
   useEffect(() => {
     const fetchCloudinaryVideos = async () => {
       try {
-        // Buscamos el archivo JSON público que Cloudinary genera para los tags
         const response = await fetch('https://res.cloudinary.com/dzo2wt8ir/video/list/festejos_padel.json');
         
         if (!response.ok) {
@@ -47,11 +46,11 @@ const CameraGallery = ({ onBack }) => {
 
         const data = await response.json();
         
-        // Cloudinary devuelve un array "resources". Lo formateamos para nuestra grilla
         const videoList = data.resources.map((res) => ({
           id: res.public_id,
-          // Armamos la URL pública usando la versión y el ID
-          url: `https://res.cloudinary.com/dzo2wt8ir/video/upload/v${res.version}/${res.public_id}.${res.format}`,
+          // 🔥 CAMBIO CLAVE: Clavamos ".mp4" al final de la URL. 
+          // Cloudinary se encarga de transformarlo mágicamente en sus servidores.
+          url: `https://res.cloudinary.com/dzo2wt8ir/video/upload/v${res.version}/${res.public_id}.mp4`,
           date: 'Clip en la nube',
           duration: 'NexaIA'
         }));
@@ -66,34 +65,26 @@ const CameraGallery = ({ onBack }) => {
     fetchCloudinaryVideos();
   }, []);
 
-  // NUEVA FUNCIÓN: Limpia el LocalStorage y el estado de React
-  const handleClearHistory = () => {
-    // 1. Pedimos confirmación al usuario para no borrar por accidente
-    const confirmDelete = window.confirm("¿Estás seguro de que deseas limpiar el historial local? Esto no borrará los videos de Cloudinary, solo los quitará de esta lista.");
-    
-    if (confirmDelete) {
-      // 2. Removemos la clave específica de la memoria del navegador
-      localStorage.removeItem('nexa_clips');
-      // 3. Vaciamos el estado para que la pantalla se actualice al instante
-      setMyVideos([]);
-    }
-  };
-
   // Función mágica para forzar la descarga en Safari / Móviles
   const handleDownload = async (e, video) => {
     e.preventDefault();
     if (downloadingId === video.id) return; 
+    
     setDownloadingId(video.id); 
 
     try {
       const response = await fetch(video.url);
       const blob = await response.blob();
+      
       const blobUrl = window.URL.createObjectURL(blob);
+      
       const link = document.createElement('a');
       link.href = blobUrl;
-      link.download = `Festejo_NexaPadel_${video.id}.webm`;
+      // 🔥 CAMBIO CLAVE: Modificamos la extensión del archivo descargado a .mp4
+      link.download = `Festejo_NexaPadel_${video.id}.mp4`;
       document.body.appendChild(link);
       link.click();
+      
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
     } catch (error) {
@@ -106,17 +97,14 @@ const CameraGallery = ({ onBack }) => {
 
   return (
     <div style={styles.moduleMenuContainer}>
-      
-      {/* Header con botón de volver */}
       <div style={styles.exitBar}>
         <button style={styles.exitButton} onClick={onBack}>⬅ Volver al Menú</button>
       </div>
 
       <div style={styles.galleryContent}>
         <h2 style={styles.galleryTitle}>🎬 Mis Clips de Festejo</h2>
-        <p style={styles.gallerySubtitle}>Tus mejores momentos grabados por NexaIA</p>
+        <p style={styles.gallerySubtitle}>Tus mejores momentos grabados por NexaIA (Formato MP4)</p>
 
-        {/* Si no hay videos, mostramos mensaje */}
         {myVideos.length === 0 ? (
           <div style={{ textAlign: 'center', marginTop: '40px', color: 'rgba(255,255,255,0.6)' }}>
             <span style={{ fontSize: '40px', display: 'block', marginBottom: '10px' }}>🤷‍♂️</span>
@@ -124,12 +112,12 @@ const CameraGallery = ({ onBack }) => {
             <p>¡Ve a la cámara, levanta los brazos y tu video aparecerá aquí!</p>
           </div>
         ) : (
-          /* Grilla de Videos Reales */
           <div style={styles.videoGrid}>
             {myVideos.map((video, index) => (
               <div key={video.id} style={styles.videoCard}>
                 
                 <div style={styles.thumbnailContainer} onClick={() => setSelectedVideo(video)}>
+                  {/* El reproductor de la miniatura también lee el MP4 transformado */}
                   <video src={video.url} style={styles.thumbnailVideo} />
                   <div style={styles.playIconOverlay}>▶</div>
                   <span style={styles.durationBadge}>{video.duration || 'Clip'}</span>
@@ -142,13 +130,10 @@ const CameraGallery = ({ onBack }) => {
 
                 <button 
                   onClick={(e) => handleDownload(e, video)}
-                  style={{
-                    ...styles.downloadButton,
-                    opacity: downloadingId === video.id ? 0.5 : 1
-                  }}
+                  style={{...styles.downloadButton, opacity: downloadingId === video.id ? 0.5 : 1}}
                   disabled={downloadingId === video.id}
                 >
-                  {downloadingId === video.id ? '⏳ Descargando...' : '⬇ Descargar Clip'}
+                  {downloadingId === video.id ? '⏳ Convirtiendo y Descargando...' : '⬇ Descargar MP4'}
                 </button>
               </div>
             ))}
@@ -156,20 +141,11 @@ const CameraGallery = ({ onBack }) => {
         )}
       </div>
 
-      {/* === MODAL DE REPRODUCCIÓN (PANTALLA COMPLETA) === */}
       {selectedVideo && (
         <div style={styles.modalOverlay}>
-          <button style={styles.closeModalButton} onClick={() => setSelectedVideo(null)}>
-            ❌ Cerrar
-          </button>
-          
+          <button style={styles.closeModalButton} onClick={() => setSelectedVideo(null)}>❌ Cerrar</button>
           <div style={styles.modalVideoContainer}>
-            <video 
-              src={selectedVideo.url} 
-              controls
-              autoPlay 
-              style={styles.modalVideo}
-            />
+            <video src={selectedVideo.url} controls autoPlay style={styles.modalVideo} />
             <h3 style={styles.modalVideoTitle}>Reproduciendo: Festejo</h3>
             <p style={styles.modalVideoDate}>{selectedVideo.date}</p>
           </div>
