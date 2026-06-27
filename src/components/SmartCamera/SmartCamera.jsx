@@ -18,7 +18,6 @@ const SmartCamera = ({ onBack }) => {
   const detectorRef = useRef(null);
   const detectionIntervalRef = useRef(null);
   
-  // Referencia para el bucle que reinicia el video cada 60 segundos
   const recorderIntervalRef = useRef(null); 
   
   const consecutiveFramesRef = useRef(0);
@@ -33,7 +32,6 @@ const SmartCamera = ({ onBack }) => {
 
         await tf.ready();
         
-        // === TRACKING DESACTIVADO PARA EVITAR CONGELAMIENTO ===
         const detectorConfig = {
           modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
           enableTracking: false,
@@ -49,7 +47,7 @@ const SmartCamera = ({ onBack }) => {
         warmUpCanvas.width = 160;
         warmUpCanvas.height = 160;
         await detectorRef.current.estimatePoses(warmUpCanvas);
-        console.log("IA MultiPose aliviada lista");
+        console.log("IA MultiPose lista");
         setIsLoadingModel(false);
       } catch (error) {
         console.error("Error IA:", error);
@@ -96,6 +94,7 @@ const SmartCamera = ({ onBack }) => {
     if (recorderIntervalRef.current) clearInterval(recorderIntervalRef.current);
 
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.onstop = null; // Limpiamos eventos por las dudas
       mediaRecorderRef.current.stop();
     }
     if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
@@ -112,6 +111,7 @@ const SmartCamera = ({ onBack }) => {
 
     const startFresh = () => {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.onstop = null; // Evita disparos de subida accidentales
         mediaRecorderRef.current.stop();
       }
       chunksRef.current = []; 
@@ -125,8 +125,6 @@ const SmartCamera = ({ onBack }) => {
         }
       };
       
-      // 🔥 EL CAMBIO SALVADOR: Le decimos que procese la memoria cada 1 segundo (1000ms)
-      // Esto evita que Safari sature la memoria RAM del celular a los 16 segundos.
       mediaRecorder.start(1000); 
     };
 
@@ -176,7 +174,7 @@ const SmartCamera = ({ onBack }) => {
       } catch (err) {
         console.error("Error pose:", err);
       }
-    }, 250);
+    }, 250); // Mantenemos en 250 para velocidad máxima de respuesta
   };
 
   const processPoseKeypoints = (keypoints, ctx) => {
@@ -210,42 +208,52 @@ const SmartCamera = ({ onBack }) => {
     return false; 
   };
 
+  // === MAGIA PURA: SUBIDA POR EVENTO NATIVO (ADIÓS SETTIMEOUT) ===
   const triggerVideoProcessing = async () => {
     isProcessingVideoRef.current = true; 
     consecutiveFramesRef.current = 0; 
     setIsFestejoDetected(true);
     
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
+      const currentRecorder = mediaRecorderRef.current;
+      
+      // En vez de adivinar el tiempo, le decimos que accione RECIÉN cuando termine de guardar
+      currentRecorder.onstop = async () => {
+        if (chunksRef.current.length === 0) {
+          isProcessingVideoRef.current = false;
+          setIsFestejoDetected(false);
+          startRecording(streamRef.current); 
+          return;
+        }
+
+        // Toma el formato real que usa el celular para evitar archivos corruptos en el 2do intento
+        const mimeType = currentRecorder.mimeType || 'video/mp4';
+        const videoBlob = new Blob(chunksRef.current, { type: mimeType }); 
+        const formData = new FormData();
+        formData.append('file', videoBlob);
+        formData.append('upload_preset', 'padel_videos');
+        formData.append('resource_type', 'video');
+        formData.append('tags', 'festejos_padel'); 
+
+        try {
+          console.log("Subiendo video de forma segura...");
+          await axios.post('https://api.cloudinary.com/v1_1/dzo2wt8ir/video/upload', formData);
+          console.log("¡Video subido y etiquetado con éxito!");
+        } catch (error) {
+          console.error("Error Axios:", error);
+        } finally {
+          setIsFestejoDetected(false);
+          startRecording(streamRef.current); 
+          setTimeout(() => { isProcessingVideoRef.current = false; }, 3000); 
+        }
+      };
+
+      currentRecorder.stop(); // Esto dispara automáticamente la función de arriba
+    } else {
+      // Por si se traba, liberamos los candados
+      setIsFestejoDetected(false);
+      isProcessingVideoRef.current = false;
     }
-
-    setTimeout(async () => {
-      if (chunksRef.current.length === 0) {
-        isProcessingVideoRef.current = false;
-        setIsFestejoDetected(false);
-        startRecording(streamRef.current); 
-        return;
-      }
-
-      const videoBlob = new Blob(chunksRef.current, { type: 'video/webm' }); 
-      const formData = new FormData();
-      formData.append('file', videoBlob);
-      formData.append('upload_preset', 'padel_videos');
-      formData.append('resource_type', 'video');
-      formData.append('tags', 'festejos_padel'); 
-
-      try {
-        console.log("Subiendo video de forma segura...");
-        await axios.post('https://api.cloudinary.com/v1_1/dzo2wt8ir/video/upload', formData);
-        console.log("¡Video subido y etiquetado con éxito!");
-      } catch (error) {
-        console.error("Error Axios:", error);
-      } finally {
-        setIsFestejoDetected(false);
-        startRecording(streamRef.current); 
-        setTimeout(() => { isProcessingVideoRef.current = false; }, 3000); 
-      }
-    }, 500);
   };
 
   const toggleMasterSwitch = () => {
