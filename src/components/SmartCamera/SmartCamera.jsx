@@ -177,7 +177,7 @@ const SmartCamera = ({ onBack }) => {
       } catch (err) {
         console.error("Error pose:", err);
       }
-    }, 250);
+    }, 400);
   };
 
   // === LÓGICA DE POSTURA MEJORADA (MÁS SENSIBLE A LA DISTANCIA) ===
