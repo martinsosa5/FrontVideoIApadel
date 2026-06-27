@@ -36,7 +36,7 @@ const SmartCamera = ({ onBack }) => {
         // === TRACKING DESACTIVADO PARA EVITAR CONGELAMIENTO ===
         const detectorConfig = {
           modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
-          enableTracking: false, // <-- Cambiado a false para liberar memoria gráfica
+          enableTracking: false,
           enableSmoothing: true
         };
         
@@ -125,7 +125,9 @@ const SmartCamera = ({ onBack }) => {
         }
       };
       
-      mediaRecorder.start(); 
+      // 🔥 EL CAMBIO SALVADOR: Le decimos que procese la memoria cada 1 segundo (1000ms)
+      // Esto evita que Safari sature la memoria RAM del celular a los 16 segundos.
+      mediaRecorder.start(1000); 
     };
 
     startFresh();
@@ -137,7 +139,6 @@ const SmartCamera = ({ onBack }) => {
     }, 60000); 
   };
 
-  // === BUCLE DE DETECCIÓN ACTUALIZADO ===
   const startDetectionLoop = () => {
     detectionIntervalRef.current = setInterval(async () => {
       if (isProcessingVideoRef.current || !videoRef.current || !detectorRef.current || !canvasRef.current) return;
@@ -157,7 +158,6 @@ const SmartCamera = ({ onBack }) => {
         
         let anyoneCelebrating = false;
         
-        // Revisamos a TODAS las personas detectadas en la cancha
         if (poses && poses.length > 0) {
           poses.forEach(pose => {
             const isCelebrating = processPoseKeypoints(pose.keypoints, ctx);
@@ -167,7 +167,6 @@ const SmartCamera = ({ onBack }) => {
           });
         }
         
-        // Si AL MENOS UNA persona levantó los brazos
         if (anyoneCelebrating) {
           consecutiveFramesRef.current += 1;
           if (consecutiveFramesRef.current >= 4) triggerVideoProcessing();
@@ -180,14 +179,9 @@ const SmartCamera = ({ onBack }) => {
     }, 400);
   };
 
-  // === LÓGICA DE POSTURA MEJORADA (MÁS SENSIBLE A LA DISTANCIA) ===
-  // === LÓGICA ULTRA LIVIANA: PROCESA EN MEMORIA SIN DIBUJAR ===
   const processPoseKeypoints = (keypoints, ctx) => {
     const MIN_SCORE = 0.2; 
     
-    // Elminamos el bloque de dibujo (ctx.beginPath, arc, fill, etc.) 
-    // para que Safari no congele el video por saturación de gráficos.
-
     const kpDict = keypoints.reduce((acc, kp) => {
       acc[kp.name] = kp;
       return acc;
