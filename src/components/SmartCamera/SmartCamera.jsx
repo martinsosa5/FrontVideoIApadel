@@ -176,7 +176,7 @@ const SmartCamera = ({ onBack }) => {
       } catch (err) {
         console.error("Error pose:", err);
       }
-    }, 400);
+    }, 250);
   };
 
   const processPoseKeypoints = (keypoints, ctx) => {
