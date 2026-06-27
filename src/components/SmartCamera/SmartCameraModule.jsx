@@ -54,7 +54,7 @@ const CameraGallery = ({ onBack }) => {
           // g_south_east: abajo a la derecha
           // x_20, y_20: separación de los bordes del video
           // o_60: opacidad al 60% para que sea sutil y no tape el juego
-          const watermarkConfig = `l_${logoId},w_120,g_south_east,x_20,y_20,o_60`;
+          const watermarkConfig = `l_${logoId},w_140,g_south_east,x_20,y_20,o_100`;
 
           return {
             id: res.public_id,
