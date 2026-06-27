@@ -33,10 +33,10 @@ const SmartCamera = ({ onBack }) => {
 
         await tf.ready();
         
-        // === NUEVA CONFIGURACIÓN: MODO MULTI-JUGADOR ===
+        // === TRACKING DESACTIVADO PARA EVITAR CONGELAMIENTO ===
         const detectorConfig = {
           modelType: poseDetection.movenet.modelType.MULTIPOSE_LIGHTNING,
-          enableTracking: true, // Ayuda a no perder a los jugadores si se mueven rápido
+          enableTracking: false, // <-- Cambiado a false para liberar memoria gráfica
           enableSmoothing: true
         };
         
@@ -49,7 +49,7 @@ const SmartCamera = ({ onBack }) => {
         warmUpCanvas.width = 160;
         warmUpCanvas.height = 160;
         await detectorRef.current.estimatePoses(warmUpCanvas);
-        console.log("IA MultiPose lista");
+        console.log("IA MultiPose aliviada lista");
         setIsLoadingModel(false);
       } catch (error) {
         console.error("Error IA:", error);
@@ -181,26 +181,12 @@ const SmartCamera = ({ onBack }) => {
   };
 
   // === LÓGICA DE POSTURA MEJORADA (MÁS SENSIBLE A LA DISTANCIA) ===
+  // === LÓGICA ULTRA LIVIANA: PROCESA EN MEMORIA SIN DIBUJAR ===
   const processPoseKeypoints = (keypoints, ctx) => {
     const MIN_SCORE = 0.2; 
     
-    // Pintamos los puntos de cada jugador en la pantalla
-    if (ctx) {
-      keypoints.forEach(kp => {
-        if (kp.score > MIN_SCORE) {
-          ctx.beginPath();
-          ctx.arc(kp.x, kp.y, 8, 0, 2 * Math.PI); 
-          if (['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'].includes(kp.name)) {
-            ctx.fillStyle = '#0d6efd'; // Cabeza azul
-          } else if (['left_wrist', 'right_wrist'].includes(kp.name)) {
-            ctx.fillStyle = '#ffc107'; // Muñecas amarillas
-          } else {
-            ctx.fillStyle = '#dc3545'; // Resto rojo
-          }
-          ctx.fill();
-        }
-      });
-    }
+    // Elminamos el bloque de dibujo (ctx.beginPath, arc, fill, etc.) 
+    // para que Safari no congele el video por saturación de gráficos.
 
     const kpDict = keypoints.reduce((acc, kp) => {
       acc[kp.name] = kp;
@@ -210,27 +196,24 @@ const SmartCamera = ({ onBack }) => {
     const lWrist = kpDict['left_wrist'];
     const rWrist = kpDict['right_wrist'];
 
-    // BUSCAMOS LA CABEZA: Si no ve la nariz, busca ojos u orejas
     let headX = null;
     const headParts = ['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear'];
     for (let part of headParts) {
       if (kpDict[part] && kpDict[part].score > MIN_SCORE) {
         headX = kpDict[part].x;
-        break; // Apenas encuentre una parte válida de la cabeza, la usa
+        break; 
       }
     }
 
-    // Si detectamos la cabeza de esta persona, evaluamos sus brazos
     if (headX !== null) {
-      // (En apaisado, recordá que usamos el eje X para la altura)
       const leftArmUp = lWrist && lWrist.score > MIN_SCORE && lWrist.x < headX;
       const rightArmUp = rWrist && rWrist.score > MIN_SCORE && rWrist.x < headX;
 
       if (leftArmUp && rightArmUp) {
-        return true; // Esta persona específica está festejando
+        return true; 
       }
     }
-    return false; // Esta persona no está festejando
+    return false; 
   };
 
   const triggerVideoProcessing = async () => {
